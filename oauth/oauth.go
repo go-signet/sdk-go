@@ -171,6 +171,24 @@ type TokenInfo struct {
 	SubjectType string `json:"subject_type"`
 }
 
+// PersonalAPIKeyTokenInfo represents the tokeninfo response Signet returns for
+// a complete Personal API Key (`sgk_…`).
+//
+// It is deliberately a separate type from [TokenInfo]: Personal API Key
+// responses additionally carry `token_type`, which a resource server must check
+// before trusting the rest of the payload, and adding an exported field to the
+// existing [TokenInfo] would break callers using unkeyed struct literals.
+type PersonalAPIKeyTokenInfo struct {
+	Active      bool   `json:"active"`
+	UserID      string `json:"user_id"`
+	ClientID    string `json:"client_id"`
+	Scope       string `json:"scope"`
+	Exp         int64  `json:"exp"`
+	Iss         string `json:"iss"`
+	SubjectType string `json:"subject_type"`
+	TokenType   string `json:"token_type"`
+}
+
 // Error represents an OAuth 2.0 error response (RFC 6749 §5.2).
 type Error struct {
 	Code        string `json:"error"`
@@ -373,6 +391,7 @@ func (c *Client) Revoke(ctx context.Context, token string) error {
 		retry.WithBody("application/x-www-form-urlencoded", strings.NewReader(data.Encode())),
 	)
 	if err != nil {
+		closeRetryResponse(resp)
 		return fmt.Errorf("oauth: revoke request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -436,6 +455,49 @@ func (c *Client) TokenInfoRequest(ctx context.Context, accessToken string) (*Tok
 	return &info, nil
 }
 
+// PersonalAPIKeyTokenInfoRequest verifies a complete Signet Personal API Key
+// (`sgk_…`) through the tokeninfo endpoint.
+//
+// The request carries only `Authorization: Bearer <personalAPIKey>` — no client
+// ID and no client secret — and the key never appears in the URL or query
+// string. Signet collapses unknown, malformed, revoked, expired, and disabled
+// keys into a uniform `401 invalid_token`, so callers cannot distinguish those
+// cases from each other.
+func (c *Client) PersonalAPIKeyTokenInfoRequest(
+	ctx context.Context,
+	personalAPIKey string,
+) (*PersonalAPIKeyTokenInfo, error) {
+	if err := requireEndpoint(c.endpoints.TokenInfoURL, "tokeninfo"); err != nil {
+		return nil, err
+	}
+
+	var info PersonalAPIKeyTokenInfo
+	if err := c.getJSON(
+		ctx,
+		c.endpoints.TokenInfoURL,
+		personalAPIKey,
+		"tokeninfo",
+		&info,
+	); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+// closeRetryResponse closes resp.Body when the retry client returned both a
+// response and an error.
+//
+// go-httpretry keeps the final attempt's body open and returns
+// (non-nil *http.Response, non-nil *retry.RetryError) once retries are
+// exhausted. Returning early on err without this call leaks that body and its
+// connection. It is a no-op on the (nil, err) transport-failure shape.
+func closeRetryResponse(resp *http.Response) {
+	// net/http guarantees a non-nil Body on any response a client returns.
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+}
+
 // getJSON sends an authenticated GET request and decodes a JSON response,
 // applying the same response-size cap as postForm. op identifies the operation
 // (e.g., "userinfo", "tokeninfo") for error messages and oversize reporting.
@@ -444,6 +506,7 @@ func (c *Client) getJSON(ctx context.Context, endpoint, accessToken, op string, 
 		retry.WithHeader("Authorization", "Bearer "+accessToken),
 	)
 	if err != nil {
+		closeRetryResponse(resp)
 		return fmt.Errorf("oauth: %s request: %w", op, err)
 	}
 	defer resp.Body.Close()
@@ -486,6 +549,7 @@ func (c *Client) postForm(ctx context.Context, endpoint string, data url.Values,
 		retry.WithBody("application/x-www-form-urlencoded", strings.NewReader(data.Encode())),
 	)
 	if err != nil {
+		closeRetryResponse(resp)
 		return fmt.Errorf("oauth: request to %s: %w", endpoint, err)
 	}
 	defer resp.Body.Close()

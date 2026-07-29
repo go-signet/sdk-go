@@ -61,6 +61,31 @@ if err != nil {
 }
 ```
 
+### Personal API Keys (`sgk_…`)
+
+`PersonalAPIKeyTokenInfoRequest` verifies a complete Signet Personal API Key
+through the tokeninfo endpoint. It sends only `Authorization: Bearer <key>` —
+no client ID, no secret, and nothing in the query string:
+
+```go
+info, err := client.PersonalAPIKeyTokenInfoRequest(ctx, "sgk_...")
+if err != nil {
+    log.Fatal(err)
+}
+if info.Active && info.TokenType == "personal_api_key" {
+    fmt.Println(info.UserID, info.ClientID, info.Scope)
+}
+```
+
+Signet collapses unknown, malformed, revoked, expired, and disabled keys — and
+its own validator failures — into a uniform `401 invalid_token`, so those cases
+are not distinguishable from each other.
+
+The result type is separate from `TokenInfo` because Personal API Key responses
+additionally carry `token_type`, which must be checked before the rest of the
+payload is trusted. For a policy-aware verifier that handles both this and JWTs,
+use [`bearerauth/`](../bearerauth/) rather than calling this directly.
+
 ### Refresh / Revoke / Introspect / UserInfo
 
 ```go
@@ -98,5 +123,6 @@ if err != nil {
 - `IntrospectionResult` — active, scope, client_id, username, exp, etc.
 - `UserInfo` — sub, name, email, preferred_username, etc.
 - `TokenInfo` — active, user_id, client_id, scope, subject_type
+- `PersonalAPIKeyTokenInfo` — the above plus `token_type`, for `sgk_…` keys
 - `Error` — OAuth error code + description
 - `Endpoints` — all endpoint URLs
