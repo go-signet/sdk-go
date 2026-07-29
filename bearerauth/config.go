@@ -94,6 +94,12 @@ type Config struct {
 // fetched lazily on first use. ctx bounds construction only; it does not
 // govern later [Verifier.Verify] calls. Any injected [WithHTTPClient] is used
 // for the discovery fetch as well as for later online calls.
+//
+// Call New once at startup and share the result. Signet rate-limits the
+// discovery endpoint, so calling New per request — or even per test — earns a
+// 429 that surfaces here as a construction failure, not as a verification
+// error. The returned [Verifier] is immutable and safe for concurrent use, so
+// one instance per policy is the intended shape.
 func New(
 	ctx context.Context,
 	issuerURL string,

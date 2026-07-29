@@ -77,6 +77,11 @@ verifier, err := bearerauth.NewTokenInfoVerifier(
 verifier's); the explicit path costs one. Neither affects the `Verify` hot path.
 Use [`discovery/`](../discovery/) if you want to resolve endpoints yourself.
 
+Build the verifier **once** and share it. Signet rate-limits the discovery
+endpoint, so calling `New` per request returns a 429 as a construction error.
+The result is immutable and concurrency-safe — one instance per policy is the
+intended shape.
+
 ## Two online modes, chosen at construction
 
 Personal API Keys carry no signature, so they are verified online on **every**
