@@ -802,26 +802,6 @@ func (t *trackingTransport) assertAllClosed(tb testing.TB, wantCount int) {
 	}
 }
 
-// rewindBodyMiddleware restores a replayable request body before every attempt.
-// The retry client clones the original request per attempt but shares its
-// consumed Body reader, so without this a retried POST is rejected by net/http
-// before it reaches the server and the later attempts produce no response at
-// all — which would hide exactly the body leak this test is about.
-func rewindBodyMiddleware(next http.RoundTripper) http.RoundTripper {
-	return retry.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		if req.GetBody == nil {
-			return next.RoundTrip(req)
-		}
-		body, err := req.GetBody()
-		if err != nil {
-			return nil, err
-		}
-		req = req.Clone(req.Context())
-		req.Body = body
-		return next.RoundTrip(req)
-	})
-}
-
 // newTrackingClient builds a client whose retry behavior is fast enough for a
 // unit test, that refuses redirects, and whose response bodies are all
 // observable.
@@ -837,7 +817,7 @@ func newTrackingClient(t *testing.T, endpoints Endpoints) (*Client, *trackingTra
 		// Without it a retried POST is rejected by net/http before it reaches
 		// the server and the later attempts produce no response at all — which
 		// would hide exactly the body leak this test is about.
-		retry.WithPerAttemptMiddleware(rewindBodyMiddleware),
+		retry.WithPerAttemptMiddleware(RewindBodyMiddleware),
 		retry.WithHTTPClient(&http.Client{
 			Transport: tracker,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -975,5 +955,67 @@ func TestResponseBodyClosedOnEveryOutcome(t *testing.T) {
 			}
 			tracker.assertAllClosed(t, 1)
 		})
+	}
+}
+
+// TestDefaultClientReplaysFormBodyOnRetry pins the property that made retries
+// on every POST path a no-op before RewindBodyMiddleware was installed in the
+// package default: go-httpretry clones the request per attempt, but a clone
+// shares the already-consumed Body reader, so attempts 2..N were rejected by
+// net/http with "ContentLength=N with Body length 0" before leaving the
+// process. The upstream error was replaced by that one, so callers could no
+// longer match it with errors.As against *Error.
+func TestDefaultClientReplaysFormBodyOnRetry(t *testing.T) {
+	var (
+		mu     sync.Mutex
+		bodies []string
+	)
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+
+			mu.Lock()
+			bodies = append(bodies, string(body))
+			attempt := len(bodies)
+			mu.Unlock()
+
+			// Fail the first attempt with a retryable status, then succeed.
+			if attempt == 1 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"error":"temporarily_unavailable"}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"active": true, "sub": "user-1"})
+		}),
+	)
+	t.Cleanup(server.Close)
+
+	// No WithHTTPClient: exercise exactly the client NewClient builds.
+	client, err := NewClient("cid", Endpoints{IntrospectionURL: server.URL + "/introspect"},
+		WithClientSecret("secret"),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	res, err := client.Introspect(context.Background(), "tok")
+	if err != nil {
+		t.Fatalf("Introspect: %v", err)
+	}
+	if !res.Active || res.Sub != "user-1" {
+		t.Errorf("result = %+v, want the retried response to be decoded", res)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 2 {
+		t.Fatalf("upstream attempts = %d, want 2 (the retry never reached the server)", len(bodies))
+	}
+	if bodies[0] == "" || bodies[1] != bodies[0] {
+		t.Errorf("attempt bodies = %q, want the form replayed identically on the retry", bodies)
+	}
+	if !strings.Contains(bodies[1], "token=tok") {
+		t.Errorf("retried body = %q, want it to carry the form fields", bodies[1])
 	}
 }
