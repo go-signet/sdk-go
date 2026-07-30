@@ -755,6 +755,199 @@ func TestPersonalAPIKeyTokenInfoRequest_NoEndpoint(t *testing.T) {
 	}
 }
 
+type trackedRequestBody struct {
+	io.Reader
+	closed   atomic.Bool
+	closeErr error
+}
+
+func (b *trackedRequestBody) Close() error {
+	b.closed.Store(true)
+	return b.closeErr
+}
+
+func TestRewindBodyMiddlewareBodyLifecycle(t *testing.T) {
+	newRequest := func(t *testing.T, body io.ReadCloser) *http.Request {
+		t.Helper()
+		req, err := http.NewRequestWithContext(
+			t.Context(),
+			http.MethodPost,
+			"https://auth.example.com/oauth/introspect",
+			body,
+		)
+		if err != nil {
+			t.Fatalf("NewRequestWithContext: %v", err)
+		}
+		return req
+	}
+
+	t.Run("closes replaced body before downstream", func(t *testing.T) {
+		original := &trackedRequestBody{Reader: strings.NewReader("original")}
+		replacement := &trackedRequestBody{Reader: strings.NewReader("replacement")}
+		req := newRequest(t, original)
+		req.GetBody = func() (io.ReadCloser, error) {
+			if !original.closed.Load() {
+				t.Error("original body was not closed before GetBody")
+			}
+			return replacement, nil
+		}
+
+		next := retry.RoundTripperFunc(
+			func(got *http.Request) (*http.Response, error) {
+				if got == req {
+					t.Error("middleware forwarded the original request instead of a clone")
+				}
+				if got.Body != replacement {
+					t.Error("downstream did not receive the replacement body")
+				}
+				if replacement.closed.Load() {
+					t.Error("replacement body was closed before downstream received it")
+				}
+				body, err := io.ReadAll(got.Body)
+				if err != nil {
+					t.Errorf("ReadAll: %v", err)
+				}
+				if string(body) != "replacement" {
+					t.Errorf("body = %q, want replacement", body)
+				}
+				if err := got.Body.Close(); err != nil {
+					t.Errorf("Close replacement body: %v", err)
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Body:       http.NoBody,
+					Header:     make(http.Header),
+					Request:    got,
+				}, nil
+			},
+		)
+
+		resp, err := RewindBodyMiddleware(next).RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+		if req.Body != original {
+			t.Error("middleware mutated the original request Body field")
+		}
+		if !original.closed.Load() {
+			t.Error("original body was not closed")
+		}
+		if !replacement.closed.Load() {
+			t.Error("downstream did not close the replacement body")
+		}
+	})
+
+	t.Run("GetBody failure closes original and skips downstream", func(t *testing.T) {
+		original := &trackedRequestBody{Reader: strings.NewReader("original")}
+		req := newRequest(t, original)
+		wantErr := errors.New("cannot reopen body")
+		req.GetBody = func() (io.ReadCloser, error) {
+			return nil, wantErr
+		}
+
+		var downstreamCalled atomic.Bool
+		next := retry.RoundTripperFunc(
+			func(*http.Request) (*http.Response, error) {
+				downstreamCalled.Store(true)
+				return nil, errors.New("unexpected downstream call")
+			},
+		)
+
+		resp, err := RewindBodyMiddleware(next).RoundTrip(req)
+		if resp != nil {
+			_ = resp.Body.Close()
+			t.Errorf("response = %+v, want nil", resp)
+		}
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("err = %v, want %v", err, wantErr)
+		}
+		if !original.closed.Load() {
+			t.Error("original body was not closed")
+		}
+		if downstreamCalled.Load() {
+			t.Error("downstream was called after GetBody failed")
+		}
+	})
+
+	t.Run("Close failure does not block replay", func(t *testing.T) {
+		closeErr := errors.New("close failed")
+		original := &trackedRequestBody{
+			Reader:   strings.NewReader("original"),
+			closeErr: closeErr,
+		}
+		replacement := &trackedRequestBody{Reader: strings.NewReader("replacement")}
+		req := newRequest(t, original)
+		req.GetBody = func() (io.ReadCloser, error) {
+			return replacement, nil
+		}
+
+		var downstreamCalled atomic.Bool
+		next := retry.RoundTripperFunc(
+			func(got *http.Request) (*http.Response, error) {
+				downstreamCalled.Store(true)
+				_ = got.Body.Close()
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Body:       http.NoBody,
+					Header:     make(http.Header),
+					Request:    got,
+				}, nil
+			},
+		)
+
+		resp, err := RewindBodyMiddleware(next).RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip propagated the Body.Close error: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+		if !original.closed.Load() {
+			t.Error("original body Close was not attempted")
+		}
+		if !downstreamCalled.Load() {
+			t.Error("downstream was not called after Body.Close failed")
+		}
+	})
+
+	t.Run("without GetBody passes through unchanged", func(t *testing.T) {
+		original := &trackedRequestBody{Reader: strings.NewReader("original")}
+		req := newRequest(t, original)
+
+		next := retry.RoundTripperFunc(
+			func(got *http.Request) (*http.Response, error) {
+				if got != req {
+					t.Error("middleware cloned a request without GetBody")
+				}
+				if original.closed.Load() {
+					t.Error("middleware closed a body it did not replace")
+				}
+				_ = got.Body.Close()
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Body:       http.NoBody,
+					Header:     make(http.Header),
+					Request:    got,
+				}, nil
+			},
+		)
+
+		resp, err := RewindBodyMiddleware(next).RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+		if !original.closed.Load() {
+			t.Error("downstream did not close the original body")
+		}
+	})
+}
+
 // trackingTransport records every response body it hands back so a test can
 // assert none were leaked.
 type trackingTransport struct {

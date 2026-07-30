@@ -275,6 +275,50 @@ func TestNewSharesOneHTTPClient(t *testing.T) {
 	}
 }
 
+// TestNewDefaultHTTPClientPreservesDefaultTransport checks that the package
+// default snapshots process-wide HTTP settings instead of replacing them with
+// a blank client. This test changes process-global state and must not run in
+// parallel.
+func TestNewDefaultHTTPClientPreservesDefaultTransport(t *testing.T) {
+	previous := http.DefaultClient
+	t.Cleanup(func() {
+		http.DefaultClient = previous
+	})
+
+	tracker := &countingTransport{}
+	configured := *previous
+	configured.Transport = tracker
+	http.DefaultClient = &configured
+
+	fi := newFakeIssuer(t)
+	fi.serveOnline(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, activeTokenInfo(fi.URL(), nil))
+	})
+
+	v, err := bearerauth.New(t.Context(), fi.URL(), bearerauth.Config{
+		Audience: testAudience,
+		ClientID: testClientApp,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	constructionCalls := tracker.calls.Load()
+	if constructionCalls < 2 {
+		t.Errorf(
+			"default transport calls after New = %d, want at least 2 discovery calls",
+			constructionCalls,
+		)
+	}
+
+	if _, err := v.Verify(t.Context(), validKey); err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if got, want := tracker.calls.Load(), constructionCalls+1; got != want {
+		t.Errorf("default transport calls after Verify = %d, want %d", got, want)
+	}
+}
+
 // TestNewRejectsForeignIntrospectionEndpoint pins the same-origin binding on
 // the one endpoint discovery does not derive from the (already issuer-matched)
 // issuer string: introspection_endpoint is copied verbatim out of the fetched

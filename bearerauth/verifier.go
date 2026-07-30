@@ -250,13 +250,7 @@ func resolveHTTPClient(opts []Option) (*retry.Client, error) {
 // secret — against whatever host the response named, so every 3xx is treated
 // as an endpoint misconfiguration instead.
 func newDefaultHTTPClient() (*retry.Client, error) {
-	client, err := oauth.NewDefaultHTTPClient(
-		retry.WithHTTPClient(&http.Client{
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}),
-	)
+	client, err := oauth.NewDefaultHTTPClient()
 	if err != nil {
 		return nil, fmt.Errorf("bearerauth: create http client: %w", err)
 	}

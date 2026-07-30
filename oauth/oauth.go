@@ -256,11 +256,21 @@ func WithHTTPClient(httpClient *retry.Client) Option {
 // ContentLength error, so callers can no longer match it with errors.As
 // against *[Error].
 //
+// When a body is replayed, the incoming Body is closed before a fresh copy is
+// installed on a cloned request. The wrapped RoundTripper owns that fresh copy
+// under the standard net/http body lifecycle.
+//
 // It is a no-op for bodyless requests such as the tokeninfo/userinfo GETs.
 func RewindBodyMiddleware(next http.RoundTripper) http.RoundTripper {
 	return retry.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		if req.GetBody == nil {
 			return next.RoundTrip(req)
+		}
+		if req.Body != nil {
+			// go-httpretry shallow-clones the original request for every
+			// attempt, so retries may close the same Body more than once.
+			// Match net/http's rewind behavior and ignore Close errors.
+			_ = req.Body.Close()
 		}
 		body, err := req.GetBody()
 		if err != nil {
