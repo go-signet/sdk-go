@@ -4,10 +4,10 @@ go 1.25.10
 
 require (
 	github.com/appleboy/go-httpretry v0.13.0
-	github.com/coreos/go-oidc/v3 v3.19.0
+	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/sync v0.21.0
+	golang.org/x/sync v0.22.0
 )
 
 require (
