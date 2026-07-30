@@ -67,7 +67,7 @@ type Option func(*config)
 // reply becomes the verification verdict, letting it choose the subject and
 // scopes this package returns.
 //
-// The client must also install [github.com/go-signet/sdk-go/oauth.RewindBodyMiddleware]
+// The client must also install [oauth.RewindBodyMiddleware]
 // if it retries, or every retried introspection POST is rejected by net/http
 // before it leaves the process.
 func WithHTTPClient(client *retry.Client) Option {

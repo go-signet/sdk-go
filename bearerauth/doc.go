@@ -101,8 +101,7 @@
 // mutated after construction, must enforce its own redirect policy, and its
 // callbacks must redact the Authorization header and form bodies. It must also
 // supply its own body-replay middleware if it retries introspection: install
-// [github.com/go-signet/sdk-go/oauth.RewindBodyMiddleware], which is what the
-// default client uses.
+// [oauth.RewindBodyMiddleware], which is what the default client uses.
 //
 // Redirect refusal is a property of the default client, not something this
 // package can enforce on an injected one. A client that follows redirects will

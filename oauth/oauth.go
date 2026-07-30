@@ -244,7 +244,7 @@ func WithHTTPClient(httpClient *retry.Client) Option {
 }
 
 // RewindBodyMiddleware restores a replayable request body before every retry
-// attempt. Install it with [github.com/appleboy/go-httpretry.WithPerAttemptMiddleware]
+// attempt. Install it with [retry.WithPerAttemptMiddleware]
 // on any retry client used for form POSTs.
 //
 // go-httpretry clones the original request per attempt, but a clone shares the
