@@ -78,10 +78,10 @@ func TestVerifyHappyPathBothCredentialKinds(t *testing.T) {
 			if jwtIdentity.Issuer != keyIdentity.Issuer {
 				t.Errorf("Issuer: jwt=%q key=%q", jwtIdentity.Issuer, keyIdentity.Issuer)
 			}
-			if jwtIdentity.ClientAppID != keyIdentity.ClientAppID {
+			if jwtIdentity.ClientID != keyIdentity.ClientID {
 				t.Errorf(
-					"ClientAppID: jwt=%q key=%q",
-					jwtIdentity.ClientAppID, keyIdentity.ClientAppID,
+					"ClientID: jwt=%q key=%q",
+					jwtIdentity.ClientID, keyIdentity.ClientID,
 				)
 			}
 			if !slices.Equal(jwtIdentity.Scopes, keyIdentity.Scopes) {
@@ -394,19 +394,19 @@ func TestVerifyPolicyParity(t *testing.T) {
 		{
 			name: "issuer mismatch",
 			policy: bearerauth.Policy{
-				Issuer:      issuer + "/other",
-				ClientAppID: testClientApp,
+				Issuer:   issuer + "/other",
+				ClientID: testClientApp,
 			},
 			wantSentinel: bearerauth.ErrUntrustedIssuer,
 		},
 		{
 			name:         "client app mismatch",
-			policy:       bearerauth.Policy{Issuer: issuer, ClientAppID: "another-app"},
+			policy:       bearerauth.Policy{Issuer: issuer, ClientID: "another-app"},
 			wantSentinel: bearerauth.ErrClientAppNotAllowed,
 		},
 		{
 			name:         "client app differs only by case",
-			policy:       bearerauth.Policy{Issuer: issuer, ClientAppID: "MY-CLIENT-APP"},
+			policy:       bearerauth.Policy{Issuer: issuer, ClientID: "MY-CLIENT-APP"},
 			wantSentinel: bearerauth.ErrClientAppNotAllowed,
 		},
 		{
@@ -489,6 +489,7 @@ func TestConstructorValidation(t *testing.T) {
 			verifier jwksauth.TokenVerifier
 			url      string
 			policy   bearerauth.Policy
+			wantIn   string
 		}{
 			{name: "nil verifier", verifier: nil, url: endpoint, policy: good},
 			{
@@ -506,15 +507,15 @@ func TestConstructorValidation(t *testing.T) {
 				name:     "empty issuer",
 				verifier: jv,
 				url:      endpoint,
-				policy:   bearerauth.Policy{ClientAppID: testClientApp},
+				policy:   bearerauth.Policy{ClientID: testClientApp},
 			},
 			{
 				name:     "issuer with whitespace",
 				verifier: jv,
 				url:      endpoint,
 				policy: bearerauth.Policy{
-					Issuer:      " https://auth.example.com ",
-					ClientAppID: testClientApp,
+					Issuer:   " https://auth.example.com ",
+					ClientID: testClientApp,
 				},
 			},
 			{
@@ -522,6 +523,7 @@ func TestConstructorValidation(t *testing.T) {
 				verifier: jv,
 				url:      endpoint,
 				policy:   bearerauth.Policy{Issuer: jv.Issuer()},
+				wantIn:   "Policy.ClientID",
 			},
 			{
 				// Compared byte-for-byte against the credential's client_id,
@@ -532,9 +534,10 @@ func TestConstructorValidation(t *testing.T) {
 				verifier: jv,
 				url:      endpoint,
 				policy: bearerauth.Policy{
-					Issuer:      jv.Issuer(),
-					ClientAppID: testClientApp + "\n",
+					Issuer:   jv.Issuer(),
+					ClientID: testClientApp + "\n",
 				},
+				wantIn: "Policy.ClientID",
 			},
 		}
 
@@ -546,6 +549,9 @@ func TestConstructorValidation(t *testing.T) {
 				}
 				if v != nil {
 					t.Errorf("verifier = %v, want nil", v)
+				}
+				if tt.wantIn != "" && !strings.Contains(err.Error(), tt.wantIn) {
+					t.Errorf("err = %v, want it to mention %q", err, tt.wantIn)
 				}
 				// Configuration errors are not Verify categories.
 				for _, sentinel := range []error{

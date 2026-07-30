@@ -41,7 +41,7 @@ func identityFromJWT(info *jwksauth.TokenInfo) (*Identity, error) {
 		Subject:        info.Subject,
 		SubjectType:    subjectTypeOf(info.Subject),
 		Issuer:         info.Issuer,
-		ClientAppID:    info.Claims.ClientID,
+		ClientID:       info.Claims.ClientID,
 		Scopes:         canonicalScopes(info.Scopes),
 		ExpiresAt:      info.Expiry,
 		CredentialType: CredentialJWT,

@@ -320,7 +320,7 @@ func activeIntrospection(issuer string, overrides map[string]any) map[string]any
 func defaultPolicy(issuer string, scopes ...string) bearerauth.Policy {
 	return bearerauth.Policy{
 		Issuer:         issuer,
-		ClientAppID:    testClientApp,
+		ClientID:       testClientApp,
 		RequiredScopes: scopes,
 	}
 }

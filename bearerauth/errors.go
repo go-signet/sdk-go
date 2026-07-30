@@ -26,8 +26,8 @@ var (
 	// [Policy.Issuer] byte-for-byte.
 	ErrUntrustedIssuer = errors.New("bearerauth: untrusted issuer")
 
-	// ErrClientAppNotAllowed means the normalized identity Client App ID did
-	// not exactly match [Policy.ClientAppID].
+	// ErrClientAppNotAllowed means the normalized identity's OAuth client_id
+	// did not exactly match [Policy.ClientID].
 	ErrClientAppNotAllowed = errors.New("bearerauth: client app not allowed")
 
 	// ErrInsufficientScope means the credential is valid but is missing at

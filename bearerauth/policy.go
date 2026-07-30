@@ -11,9 +11,9 @@ var (
 	errPolicyIssuerWhitespace = errors.New(
 		"bearerauth: Policy.Issuer must not have surrounding whitespace",
 	)
-	errPolicyClientAppEmpty      = errors.New("bearerauth: Policy.ClientAppID must not be empty")
-	errPolicyClientAppWhitespace = errors.New(
-		"bearerauth: Policy.ClientAppID must not have surrounding whitespace",
+	errPolicyClientIDEmpty      = errors.New("bearerauth: Policy.ClientID must not be empty")
+	errPolicyClientIDWhitespace = errors.New(
+		"bearerauth: Policy.ClientID must not have surrounding whitespace",
 	)
 )
 
@@ -36,9 +36,9 @@ type Policy struct {
 	// but never normalized — a trailing slash is neither added nor removed.
 	Issuer string
 
-	// ClientAppID is the single Client App every credential must belong to.
-	// Matching is exact and case-sensitive.
-	ClientAppID string
+	// ClientID is the OAuth client_id of the single Signet Client App every
+	// credential must belong to. Matching is exact and case-sensitive.
+	ClientID string
 
 	// RequiredScopes are all-of: every entry must be present on the
 	// identity. Matching is exact and case-sensitive; order and duplicates
@@ -50,7 +50,7 @@ type Policy struct {
 // [Verifier].
 type canonicalPolicy struct {
 	issuer         string
-	clientAppID    string
+	clientID       string
 	requiredScopes []string
 }
 
@@ -63,19 +63,19 @@ func (p Policy) canonical() (canonicalPolicy, error) {
 		return canonicalPolicy{}, errPolicyIssuerEmpty
 	case strings.TrimSpace(p.Issuer) != p.Issuer:
 		return canonicalPolicy{}, errPolicyIssuerWhitespace
-	case strings.TrimSpace(p.ClientAppID) == "":
-		return canonicalPolicy{}, errPolicyClientAppEmpty
+	case strings.TrimSpace(p.ClientID) == "":
+		return canonicalPolicy{}, errPolicyClientIDEmpty
 	// Matched byte-for-byte against the credential's client_id, exactly like
 	// Issuer. A value carrying stray whitespace — the shape an env file or a
 	// ConfigMap yields — would construct cleanly and then deny every single
 	// request with no startup signal.
-	case strings.TrimSpace(p.ClientAppID) != p.ClientAppID:
-		return canonicalPolicy{}, errPolicyClientAppWhitespace
+	case strings.TrimSpace(p.ClientID) != p.ClientID:
+		return canonicalPolicy{}, errPolicyClientIDWhitespace
 	}
 
 	return canonicalPolicy{
 		issuer:         p.Issuer,
-		clientAppID:    p.ClientAppID,
+		clientID:       p.ClientID,
 		requiredScopes: canonicalScopes(p.RequiredScopes),
 	}, nil
 }
@@ -93,7 +93,7 @@ func (p canonicalPolicy) evaluate(id *Identity) error {
 			ErrUntrustedIssuer,
 		)
 	}
-	if id.ClientAppID != p.clientAppID {
+	if id.ClientID != p.clientID {
 		return fmt.Errorf(
 			"%w: credential belongs to a different client app",
 			ErrClientAppNotAllowed,

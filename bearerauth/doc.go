@@ -15,7 +15,7 @@
 //
 //	verifier, err := bearerauth.New(ctx, "https://auth.example.com", bearerauth.Config{
 //		Audience:       "api://orders",
-//		ClientAppID:    "orders-api",
+//		ClientID:       "orders-api",
 //		RequiredScopes: []string{"orders.read"},
 //	})
 //	if err != nil {
@@ -43,7 +43,7 @@
 //     plus a confidential client ID and secret. Signet's default ownership
 //     gate strips the response metadata when the introspecting client does not
 //     own the key's Client App, so the configured client normally must be the
-//     same Client App as [Policy.ClientAppID]. Select it by setting
+//     same Client App as [Policy.ClientID]. Select it by setting
 //     [Config.IntrospectionClientID] and [Config.IntrospectionClientSecret],
 //     or by calling [NewIntrospectionVerifier].
 //

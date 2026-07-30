@@ -17,7 +17,7 @@ import "github.com/go-signet/sdk-go/bearerauth"
 // issuer, and the tokeninfo endpoint from the issuer URL.
 verifier, err := bearerauth.New(ctx, "https://auth.example.com", bearerauth.Config{
     Audience:       "api://orders",
-    ClientAppID:    "orders-api",
+    ClientID:       "orders-api",
     RequiredScopes: []string{"orders.read"},
 })
 if err != nil {
@@ -33,7 +33,7 @@ Switching Personal API Keys to introspection is two more fields:
 ```go
 bearerauth.Config{
     Audience:       "api://orders",
-    ClientAppID:    "orders-api",
+    ClientID:       "orders-api",
     RequiredScopes: []string{"orders.read"},
 
     IntrospectionClientID:     "orders-api",
@@ -67,7 +67,7 @@ verifier, err := bearerauth.NewTokenInfoVerifier(
     "https://auth.example.com/oauth/tokeninfo",
     bearerauth.Policy{
         Issuer:         jwtVerifier.Issuer(), // byte-for-byte, never normalized
-        ClientAppID:    "orders-api",
+        ClientID:       "orders-api",
         RequiredScopes: []string{"orders.read"},
     },
 )
@@ -107,7 +107,7 @@ same Client App the policy pins.
 | `Subject`        | `sub`                                   | `user_id`               | `sub`                   |
 | `SubjectType`    | `client` for `client:<id>`, else `user` | `user`                  | `user`                  |
 | `Issuer`         | `iss`                                   | `iss`                   | `iss`                   |
-| `ClientAppID`    | `client_id`                             | `client_id`             | `client_id`             |
+| `ClientID`        | `client_id`                             | `client_id`             | `client_id`             |
 | `Scopes`         | verified scopes                         | `strings.Fields(scope)` | `strings.Fields(scope)` |
 | `ExpiresAt`      | verified expiry                         | Unix `exp`              | Unix `exp`              |
 | `CredentialType` | `jwt`                                   | `personal_api_key`      | `personal_api_key`      |
@@ -128,7 +128,7 @@ After either path produces an `Identity`:
    issuer Signet discovery reported (`(*jwksauth.Verifier).Issuer()`); the
    constructor validates but never normalizes it, so no trailing slash is added
    or removed for you.
-2. `Identity.ClientAppID` must equal `Policy.ClientAppID` exactly and
+2. `Identity.ClientID` must equal `Policy.ClientID` exactly and
    case-sensitively.
 3. Every entry in `Policy.RequiredScopes` must be present (all-of, exact,
    case-sensitive). Order and duplicates in the policy do not matter.
@@ -150,7 +150,7 @@ Every failure matches exactly one sentinel under `errors.Is`, and no partial
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | `ErrInvalidCredential`   | Empty/malformed credential, inactive key, tokeninfo `401`, invalid JWT, wrong JWT `type`, expired identity                                  | 401 `invalid_token`      |
 | `ErrUntrustedIssuer`     | Issuer ≠ `Policy.Issuer`                                                                                                                    | 401 `invalid_token`      |
-| `ErrClientAppNotAllowed` | Client App ≠ `Policy.ClientAppID`                                                                                                           | 401 `invalid_token`      |
+| `ErrClientAppNotAllowed` | Client App ≠ `Policy.ClientID`                                                                                                              | 401 `invalid_token`      |
 | `ErrInsufficientScope`   | A required scope is missing                                                                                                                 | 403 `insufficient_scope` |
 | `ErrVerifierUnavailable` | Transport failure, exhausted 429/5xx retries, refused redirect, rejected introspection credentials, malformed/oversized/incomplete response | 503                      |
 

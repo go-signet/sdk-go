@@ -66,8 +66,9 @@ type Identity struct {
 	// [Policy.Issuer].
 	Issuer string
 
-	// ClientAppID is the Client App the credential belongs to.
-	ClientAppID string
+	// ClientID is the OAuth client_id of the Signet Client App that owns the
+	// credential.
+	ClientID string
 
 	// Scopes is the granted scope list, de-duplicated and lexicographically
 	// sorted so semantically identical grants compare equal regardless of
@@ -132,7 +133,7 @@ func ensureUsable(id *Identity) error {
 		return invalidCredential("verified credential has no subject")
 	case id.Issuer == "":
 		return invalidCredential("verified credential has no issuer")
-	case id.ClientAppID == "":
+	case id.ClientID == "":
 		return invalidCredential("verified credential has no client app")
 	case id.ExpiresAt.IsZero():
 		return invalidCredential("verified credential has no expiry")

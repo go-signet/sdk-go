@@ -27,7 +27,7 @@ func TestNewFromIssuer(t *testing.T) {
 			cfg: func() bearerauth.Config {
 				return bearerauth.Config{
 					Audience:       testAudience,
-					ClientAppID:    testClientApp,
+					ClientID:       testClientApp,
 					RequiredScopes: []string{"read"},
 				}
 			},
@@ -43,7 +43,7 @@ func TestNewFromIssuer(t *testing.T) {
 			cfg: func() bearerauth.Config {
 				return bearerauth.Config{
 					Audience:                  testAudience,
-					ClientAppID:               testClientApp,
+					ClientID:                  testClientApp,
 					RequiredScopes:            []string{"read"},
 					IntrospectionClientID:     introspectionID,
 					IntrospectionClientSecret: introspectionPW,
@@ -62,7 +62,7 @@ func TestNewFromIssuer(t *testing.T) {
 			cfg: func() bearerauth.Config {
 				return bearerauth.Config{
 					SkipAudience: true,
-					ClientAppID:  testClientApp,
+					ClientID:     testClientApp,
 				}
 			},
 			handler: func(issuer string) http.HandlerFunc {
@@ -136,8 +136,8 @@ func TestNewFromIssuer(t *testing.T) {
 func TestNewRejectsAudienceMismatch(t *testing.T) {
 	fi := newFakeIssuer(t)
 	v, err := bearerauth.New(t.Context(), fi.URL(), bearerauth.Config{
-		Audience:    "api://other",
-		ClientAppID: testClientApp,
+		Audience: "api://other",
+		ClientID: testClientApp,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -161,19 +161,19 @@ func TestNewConfigValidation(t *testing.T) {
 		{
 			name:      "empty issuer url",
 			issuerURL: "  ",
-			cfg:       bearerauth.Config{Audience: testAudience, ClientAppID: testClientApp},
+			cfg:       bearerauth.Config{Audience: testAudience, ClientID: testClientApp},
 			wantIn:    "issuerURL",
 		},
 		{
 			name:      "empty client app",
 			issuerURL: fi.URL(),
 			cfg:       bearerauth.Config{Audience: testAudience},
-			wantIn:    "ClientAppID",
+			wantIn:    "ClientID",
 		},
 		{
 			name:      "missing audience",
 			issuerURL: fi.URL(),
-			cfg:       bearerauth.Config{ClientAppID: testClientApp},
+			cfg:       bearerauth.Config{ClientID: testClientApp},
 			wantIn:    "Audience",
 		},
 		{
@@ -182,7 +182,7 @@ func TestNewConfigValidation(t *testing.T) {
 			cfg: bearerauth.Config{
 				Audience:     testAudience,
 				SkipAudience: true,
-				ClientAppID:  testClientApp,
+				ClientID:     testClientApp,
 			},
 			wantIn: "mutually exclusive",
 		},
@@ -191,7 +191,7 @@ func TestNewConfigValidation(t *testing.T) {
 			issuerURL: fi.URL(),
 			cfg: bearerauth.Config{
 				Audience:              testAudience,
-				ClientAppID:           testClientApp,
+				ClientID:              testClientApp,
 				IntrospectionClientID: introspectionID,
 			},
 			wantIn: "must be set together",
@@ -201,7 +201,7 @@ func TestNewConfigValidation(t *testing.T) {
 			issuerURL: fi.URL(),
 			cfg: bearerauth.Config{
 				Audience:                  testAudience,
-				ClientAppID:               testClientApp,
+				ClientID:                  testClientApp,
 				IntrospectionClientSecret: introspectionPW,
 			},
 			wantIn: "must be set together",
@@ -209,7 +209,7 @@ func TestNewConfigValidation(t *testing.T) {
 		{
 			name:      "unreachable issuer",
 			issuerURL: "http://127.0.0.1:1",
-			cfg:       bearerauth.Config{Audience: testAudience, ClientAppID: testClientApp},
+			cfg:       bearerauth.Config{Audience: testAudience, ClientID: testClientApp},
 			wantIn:    "bearerauth:",
 		},
 	}
@@ -255,8 +255,8 @@ func TestNewSharesOneHTTPClient(t *testing.T) {
 	httpClient := newTrackedRetryClient(t, tracker)
 
 	v, err := bearerauth.New(t.Context(), fi.URL(), bearerauth.Config{
-		Audience:    testAudience,
-		ClientAppID: testClientApp,
+		Audience: testAudience,
+		ClientID: testClientApp,
 	}, bearerauth.WithHTTPClient(httpClient))
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -294,7 +294,7 @@ func TestNewRejectsForeignIntrospectionEndpoint(t *testing.T) {
 
 	_, err := bearerauth.New(t.Context(), fi.URL(), bearerauth.Config{
 		Audience:                  testAudience,
-		ClientAppID:               testClientApp,
+		ClientID:                  testClientApp,
 		IntrospectionClientID:     introspectionID,
 		IntrospectionClientSecret: introspectionPW,
 	})
@@ -325,7 +325,7 @@ func TestNewAcceptsSameOriginIntrospectionEndpoint(t *testing.T) {
 
 	v, err := bearerauth.New(t.Context(), fi.URL(), bearerauth.Config{
 		Audience:                  testAudience,
-		ClientAppID:               testClientApp,
+		ClientID:                  testClientApp,
 		IntrospectionClientID:     introspectionID,
 		IntrospectionClientSecret: introspectionPW,
 	})

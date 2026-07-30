@@ -13,7 +13,7 @@ import (
 
 var (
 	errIssuerURLEmpty        = errors.New("bearerauth: issuerURL must not be empty")
-	errConfigClientAppEmpty  = errors.New("bearerauth: Config.ClientAppID must not be empty")
+	errConfigClientIDEmpty   = errors.New("bearerauth: Config.ClientID must not be empty")
 	errConfigAudienceMissing = errors.New(
 		"bearerauth: Config.Audience must not be empty " +
 			"(set Config.SkipAudience to opt out)",
@@ -46,9 +46,10 @@ type Config struct {
 	// opt-out explicit keeps it from happening by accident.
 	SkipAudience bool
 
-	// ClientAppID is the single Client App every credential must belong to.
+	// ClientID is the OAuth client_id of the single Signet Client App every
+	// credential must belong to.
 	// Required.
-	ClientAppID string
+	ClientID string
 
 	// RequiredScopes are the all-of scopes every credential must carry.
 	RequiredScopes []string
@@ -57,7 +58,7 @@ type Config struct {
 	// introspection for Personal API Keys. Both empty selects tokeninfo.
 	//
 	// With Signet's default ownership gate these credentials normally have to
-	// belong to the same Client App as ClientAppID; see
+	// belong to the same Client App as ClientID; see
 	// [NewIntrospectionVerifier].
 	IntrospectionClientID     string
 	IntrospectionClientSecret string
@@ -80,7 +81,7 @@ type Config struct {
 //
 //	verifier, err := bearerauth.New(ctx, "https://auth.example.com", bearerauth.Config{
 //		Audience:       "api://orders",
-//		ClientAppID:    "orders-api",
+//		ClientID:       "orders-api",
 //		RequiredScopes: []string{"orders.read"},
 //	})
 //
@@ -143,7 +144,7 @@ func New(
 	// exact-match policy cannot be defeated by a hand-typed trailing slash.
 	policy := Policy{
 		Issuer:         jwtVerifier.Issuer(),
-		ClientAppID:    strings.TrimSpace(cfg.ClientAppID),
+		ClientID:       strings.TrimSpace(cfg.ClientID),
 		RequiredScopes: cfg.RequiredScopes,
 	}
 
@@ -203,8 +204,8 @@ func requireSameOrigin(endpoint, issuer, name string) (string, error) {
 func (c Config) validate() error {
 	hasAudience := strings.TrimSpace(c.Audience) != ""
 	switch {
-	case strings.TrimSpace(c.ClientAppID) == "":
-		return errConfigClientAppEmpty
+	case strings.TrimSpace(c.ClientID) == "":
+		return errConfigClientIDEmpty
 	case !hasAudience && !c.SkipAudience:
 		return errConfigAudienceMissing
 	case hasAudience && c.SkipAudience:

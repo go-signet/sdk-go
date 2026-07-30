@@ -142,7 +142,7 @@ func NewTokenInfoVerifier(
 // default ownership gate, a client introspecting a key that belongs to another
 // Client App receives a metadata-stripped `{"active":true}`, which this
 // package fails closed as [ErrVerifierUnavailable] — so in practice the
-// configured client must be the same Client App as [Policy.ClientAppID].
+// configured client must be the same Client App as [Policy.ClientID].
 //
 // The client secret is retained privately for future requests and never
 // appears in an [Identity], an error, or a URL.

@@ -468,7 +468,7 @@ func TestVerifierIsConcurrencySafe(t *testing.T) {
 					errs <- err
 					return
 				}
-				if id.Subject != "user-1" || id.ClientAppID != testClientApp {
+				if id.Subject != "user-1" || id.ClientID != testClientApp {
 					errs <- errors.New("unexpected identity: " + id.Subject)
 					return
 				}

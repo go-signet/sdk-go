@@ -25,7 +25,7 @@ func Example() {
 
 	verifier, err := bearerauth.New(ctx, "https://auth.example.com", bearerauth.Config{
 		Audience:       "api://orders",
-		ClientAppID:    "orders-api",
+		ClientID:       "orders-api",
 		RequiredScopes: []string{"orders.read"},
 	})
 	if err != nil {
@@ -49,11 +49,11 @@ func ExampleNew_introspection() {
 
 	verifier, err := bearerauth.New(ctx, "https://auth.example.com", bearerauth.Config{
 		Audience:       "api://orders",
-		ClientAppID:    "orders-api",
+		ClientID:       "orders-api",
 		RequiredScopes: []string{"orders.read"},
 
 		// Signet's ownership gate means these normally have to belong to the
-		// same Client App as ClientAppID above.
+		// same Client App as ClientID above.
 		IntrospectionClientID:     "orders-api",
 		IntrospectionClientSecret: os.Getenv("ORDERS_API_CLIENT_SECRET"),
 	})
@@ -86,7 +86,7 @@ func ExampleNewTokenInfoVerifier() {
 		bearerauth.Policy{
 			// Pass the issuer Signet discovery reported, byte-for-byte.
 			Issuer:         jwtVerifier.Issuer(),
-			ClientAppID:    "orders-api",
+			ClientID:       "orders-api",
 			RequiredScopes: []string{"orders.read"},
 		},
 	)
@@ -124,7 +124,7 @@ func ExampleNewIntrospectionVerifier() {
 		"orders-api-secret", // client secret; never appears in errors
 		bearerauth.Policy{
 			Issuer:         jwtVerifier.Issuer(),
-			ClientAppID:    "orders-api",
+			ClientID:       "orders-api",
 			RequiredScopes: []string{"orders.read", "orders.write"},
 		},
 	)
@@ -239,7 +239,7 @@ func ExampleWithHTTPClient() {
 	verifier, err := bearerauth.NewTokenInfoVerifier(
 		jwtVerifier,
 		"https://auth.example.com/oauth/tokeninfo",
-		bearerauth.Policy{Issuer: jwtVerifier.Issuer(), ClientAppID: "orders-api"},
+		bearerauth.Policy{Issuer: jwtVerifier.Issuer(), ClientID: "orders-api"},
 		bearerauth.WithHTTPClient(httpClient),
 	)
 	if err != nil {
@@ -262,7 +262,7 @@ func ExampleIdentity_HasScope() {
 		Subject:        "user-42",
 		SubjectType:    bearerauth.SubjectUser,
 		Issuer:         "https://auth.example.com",
-		ClientAppID:    "orders-api",
+		ClientID:       "orders-api",
 		Scopes:         []string{"orders.read", "orders.write"},
 		ExpiresAt:      time.Now().Add(time.Hour),
 		CredentialType: bearerauth.CredentialPersonalAPIKey,
