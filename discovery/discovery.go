@@ -148,7 +148,7 @@ func NewClient(issuerURL string, opts ...Option) (*Client, error) {
 	}
 
 	if c.httpClient == nil {
-		httpClient, err := retry.NewRealtimeClient(retry.WithNoLogging())
+		httpClient, err := oauth.NewDefaultHTTPClient()
 		if err != nil {
 			return nil, fmt.Errorf("discovery: create http client: %w", err)
 		}
@@ -201,6 +201,13 @@ func (c *Client) refresh(ctx context.Context) (*Metadata, error) {
 		discoveryURL := c.issuerURL + wellKnownPath
 		resp, err := c.httpClient.Get(fetchCtx, discoveryURL)
 		if err != nil {
+			// go-httpretry keeps the final attempt's body open and returns
+			// (non-nil *http.Response, non-nil *retry.RetryError) once retries
+			// are exhausted. Returning early without this close leaks that body
+			// and its connection.
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
 			return nil, fmt.Errorf("discovery: fetch %s: %w", discoveryURL, err)
 		}
 		defer resp.Body.Close()

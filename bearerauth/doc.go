@@ -100,8 +100,8 @@
 // retry callbacks. Such a client must be safe for concurrent use, must not be
 // mutated after construction, must enforce its own redirect policy, and its
 // callbacks must redact the Authorization header and form bodies. It must also
-// supply its own body-replay middleware if it retries introspection; see
-// rewindBody in verifier.go, which is what the default client installs.
+// supply its own body-replay middleware if it retries introspection: install
+// [oauth.RewindBodyMiddleware], which is what the default client uses.
 //
 // Redirect refusal is a property of the default client, not something this
 // package can enforce on an injected one. A client that follows redirects will

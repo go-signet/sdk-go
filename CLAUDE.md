@@ -22,6 +22,7 @@ Packages:
 Cross-cutting notes:
 
 - The `jwksauth` package's default private-claim prefix is `"extra"`, matching the upstream Signet `JWT_PRIVATE_CLAIM_PREFIX` default; deployments that override the server-side value must pass the same string via `jwksauth.WithPrivateClaimPrefix(...)`.
+- Every retry client used for form POSTs must install `oauth.RewindBodyMiddleware`; build defaults via `oauth.NewDefaultHTTPClient()` rather than calling `retry.NewRealtimeClient` directly. go-httpretry clones the request per attempt but shares the consumed body reader, so without it retried POSTs are rejected by `net/http` before they leave the process.
 - go-httpretry returns a non-nil `*http.Response` alongside its error once retries are exhausted. Every `httpClient.Get`/`Post` call site must close that body on the error path or it leaks the body and its connection.
 
 ## Common Commands

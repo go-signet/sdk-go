@@ -32,3 +32,6 @@ go.work.sum
 # .vscode/
 bin
 .signet-tokens.json
+
+# macOS
+.DS_Store

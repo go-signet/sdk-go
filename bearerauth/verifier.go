@@ -67,7 +67,7 @@ type Option func(*config)
 // reply becomes the verification verdict, letting it choose the subject and
 // scopes this package returns.
 //
-// The client must also install its own body-replay middleware (see rewindBody)
+// The client must also install [oauth.RewindBodyMiddleware]
 // if it retries, or every retried introspection POST is rejected by net/http
 // before it leaves the process.
 func WithHTTPClient(client *retry.Client) Option {
@@ -250,9 +250,7 @@ func resolveHTTPClient(opts []Option) (*retry.Client, error) {
 // secret — against whatever host the response named, so every 3xx is treated
 // as an endpoint misconfiguration instead.
 func newDefaultHTTPClient() (*retry.Client, error) {
-	client, err := retry.NewRealtimeClient(
-		retry.WithNoLogging(),
-		retry.WithPerAttemptMiddleware(rewindBody),
+	client, err := oauth.NewDefaultHTTPClient(
 		retry.WithHTTPClient(&http.Client{
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
@@ -263,32 +261,6 @@ func newDefaultHTTPClient() (*retry.Client, error) {
 		return nil, fmt.Errorf("bearerauth: create http client: %w", err)
 	}
 	return client, nil
-}
-
-// rewindBody restores a replayable request body before every attempt.
-//
-// The retry client clones the original request per attempt, but a clone shares
-// the already-consumed Body reader; only Request.GetBody can produce a fresh
-// one. Without this, the introspection form is sent in full on the first
-// attempt and as zero bytes on every retry, which net/http rejects outright
-// ("ContentLength=N with Body length 0") — so a 429 or 5xx from the
-// introspection endpoint could never actually be retried.
-//
-// It is a no-op for the tokeninfo GET, which carries no body.
-func rewindBody(next http.RoundTripper) http.RoundTripper {
-	return retry.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		if req.GetBody == nil {
-			return next.RoundTrip(req)
-		}
-		body, err := req.GetBody()
-		if err != nil {
-			return nil, err
-		}
-		// Clone rather than mutate: RoundTrip must not modify its argument.
-		req = req.Clone(req.Context())
-		req.Body = body
-		return next.RoundTrip(req)
-	})
 }
 
 // isNilVerifier reports whether v is unusable. A plain `v == nil` check is not

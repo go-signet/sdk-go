@@ -243,6 +243,54 @@ func WithHTTPClient(httpClient *retry.Client) Option {
 	}
 }
 
+// RewindBodyMiddleware restores a replayable request body before every retry
+// attempt. Install it with [retry.WithPerAttemptMiddleware]
+// on any retry client used for form POSTs.
+//
+// go-httpretry clones the original request per attempt, but a clone shares the
+// already-consumed Body reader; only Request.GetBody can produce a fresh one.
+// Without this, a form POST is sent in full on the first attempt and as zero
+// bytes on every retry, which net/http rejects before the request leaves the
+// process ("ContentLength=N with Body length 0"). That makes retries a no-op
+// for every 429/5xx and — worse — replaces the real upstream error with the
+// ContentLength error, so callers can no longer match it with errors.As
+// against *[Error].
+//
+// It is a no-op for bodyless requests such as the tokeninfo/userinfo GETs.
+func RewindBodyMiddleware(next http.RoundTripper) http.RoundTripper {
+	return retry.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.GetBody == nil {
+			return next.RoundTrip(req)
+		}
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, err
+		}
+		// Clone rather than mutate: RoundTrip must not modify its argument.
+		req = req.Clone(req.Context())
+		req.Body = body
+		return next.RoundTrip(req)
+	})
+}
+
+// NewDefaultHTTPClient builds the retry client this package uses when the
+// caller supplies none: the go-httpretry realtime preset with logging disabled
+// and [RewindBodyMiddleware] installed so retried form POSTs replay their body.
+//
+// It is exported so every package in the SDK — and any caller assembling its
+// own client — shares one transport policy instead of re-deriving it.
+func NewDefaultHTTPClient(opts ...retry.Option) (*retry.Client, error) {
+	defaults := []retry.Option{
+		retry.WithNoLogging(),
+		retry.WithPerAttemptMiddleware(RewindBodyMiddleware),
+	}
+	client, err := retry.NewRealtimeClient(append(defaults, opts...)...)
+	if err != nil {
+		return nil, fmt.Errorf("oauth: create http client: %w", err)
+	}
+	return client, nil
+}
+
 // NewClient creates a new OAuth 2.0 client.
 // A default retry HTTP client is created only when no client is provided via WithHTTPClient.
 func NewClient(clientID string, endpoints Endpoints, opts ...Option) (*Client, error) {
@@ -257,9 +305,9 @@ func NewClient(clientID string, endpoints Endpoints, opts ...Option) (*Client, e
 	}
 
 	if c.httpClient == nil {
-		httpClient, err := retry.NewRealtimeClient(retry.WithNoLogging())
+		httpClient, err := NewDefaultHTTPClient()
 		if err != nil {
-			return nil, fmt.Errorf("oauth: create http client: %w", err)
+			return nil, err
 		}
 		c.httpClient = httpClient
 	}
