@@ -1019,3 +1019,117 @@ func TestDefaultClientReplaysFormBodyOnRetry(t *testing.T) {
 		t.Errorf("retried body = %q, want it to carry the form fields", bodies[1])
 	}
 }
+
+func TestDefaultHTTPClientRedirectPolicy(t *testing.T) {
+	t.Run("refuses redirects by default", func(t *testing.T) {
+		for _, status := range []int{
+			http.StatusMovedPermanently,
+			http.StatusFound,
+			http.StatusSeeOther,
+			http.StatusTemporaryRedirect,
+			http.StatusPermanentRedirect,
+		} {
+			t.Run(http.StatusText(status), func(t *testing.T) {
+				var targetCalls atomic.Int64
+				target := httptest.NewServer(http.HandlerFunc(
+					func(w http.ResponseWriter, _ *http.Request) {
+						targetCalls.Add(1)
+						w.Header().Set("Content-Type", "application/json")
+						_ = json.NewEncoder(w).Encode(map[string]any{"active": true})
+					},
+				))
+				t.Cleanup(target.Close)
+
+				source := httptest.NewServer(http.HandlerFunc(
+					func(w http.ResponseWriter, _ *http.Request) {
+						w.Header().Set("Location", target.URL+"/capture")
+						w.WriteHeader(status)
+					},
+				))
+				t.Cleanup(source.Close)
+
+				client, err := NewClient(
+					"client-id",
+					Endpoints{IntrospectionURL: source.URL + "/introspect"},
+					WithClientSecret("client-secret"),
+				)
+				if err != nil {
+					t.Fatalf("NewClient: %v", err)
+				}
+
+				if _, err := client.Introspect(t.Context(), "token"); err == nil {
+					t.Fatal("Introspect error = nil, want refused redirect")
+				}
+				if got := targetCalls.Load(); got != 0 {
+					t.Errorf("redirect target calls = %d, want 0", got)
+				}
+			})
+		}
+	})
+
+	t.Run("explicit HTTP client override can follow redirects", func(t *testing.T) {
+		type capturedForm struct {
+			clientID     string
+			clientSecret string
+			token        string
+		}
+		captured := make(chan capturedForm, 1)
+		target := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				if err := r.ParseForm(); err != nil {
+					t.Errorf("ParseForm: %v", err)
+				}
+				captured <- capturedForm{
+					clientID:     r.PostForm.Get("client_id"),
+					clientSecret: r.PostForm.Get("client_secret"),
+					token:        r.PostForm.Get("token"),
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"active": true})
+			},
+		))
+		t.Cleanup(target.Close)
+
+		source := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Location", target.URL+"/capture")
+				w.WriteHeader(http.StatusTemporaryRedirect)
+			},
+		))
+		t.Cleanup(source.Close)
+
+		retryClient, err := NewDefaultHTTPClient(
+			retry.WithHTTPClient(&http.Client{}),
+		)
+		if err != nil {
+			t.Fatalf("NewDefaultHTTPClient: %v", err)
+		}
+		client, err := NewClient(
+			"client-id",
+			Endpoints{IntrospectionURL: source.URL + "/introspect"},
+			WithClientSecret("client-secret"),
+			WithHTTPClient(retryClient),
+		)
+		if err != nil {
+			t.Fatalf("NewClient: %v", err)
+		}
+
+		res, err := client.Introspect(t.Context(), "token")
+		if err != nil {
+			t.Fatalf("Introspect: %v", err)
+		}
+		if !res.Active {
+			t.Errorf("result = %+v, want active response from redirect target", res)
+		}
+
+		got := <-captured
+		want := capturedForm{
+			clientID:     "client-id",
+			clientSecret: "client-secret",
+			token:        "token",
+		}
+		if got != want {
+			t.Errorf("redirected form = %+v, want %+v", got, want)
+		}
+	})
+}

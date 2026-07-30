@@ -276,13 +276,26 @@ func RewindBodyMiddleware(next http.RoundTripper) http.RoundTripper {
 // NewDefaultHTTPClient builds the retry client this package uses when the
 // caller supplies none: the go-httpretry realtime preset with logging disabled
 // and [RewindBodyMiddleware] installed so retried form POSTs replay their body.
+// Redirects are refused so a 307/308 cannot forward a credential-bearing form
+// to another host.
 //
 // It is exported so every package in the SDK — and any caller assembling its
-// own client — shares one transport policy instead of re-deriving it.
+// own client — shares one transport policy instead of re-deriving it. Options
+// are applied after these defaults, so a caller can intentionally replace the
+// underlying *http.Client (and therefore its redirect policy) with
+// [retry.WithHTTPClient].
 func NewDefaultHTTPClient(opts ...retry.Option) (*retry.Client, error) {
+	httpClient := *http.DefaultClient
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 	defaults := []retry.Option{
 		retry.WithNoLogging(),
 		retry.WithPerAttemptMiddleware(RewindBodyMiddleware),
+		// Preserve any process-wide Transport, Timeout, or Jar configured on
+		// http.DefaultClient at construction time while replacing its unsafe
+		// redirect policy without mutating the global client.
+		retry.WithHTTPClient(&httpClient),
 	}
 	client, err := retry.NewRealtimeClient(append(defaults, opts...)...)
 	if err != nil {

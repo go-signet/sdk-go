@@ -116,6 +116,13 @@ if err != nil {
 | `WithClientSecret()` | Set client secret (confidential clients)     |
 | `WithHTTPClient()`   | Set custom `*retry.Client` for HTTP requests |
 
+The default retry client disables logging, replays form bodies on retries, and
+refuses redirects so credentials cannot be forwarded to another host.
+`NewDefaultHTTPClient` accepts `retry.Option` values after those defaults; an
+explicit `retry.WithHTTPClient` can replace the redirect policy when required.
+Callers that do so are responsible for preventing credential-bearing requests
+from following untrusted redirects.
+
 ## Types
 
 - `Token` — access_token, refresh_token, token_type, expires_in, scope, id_token
