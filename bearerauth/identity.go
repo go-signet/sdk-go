@@ -35,11 +35,9 @@ const (
 // subjects issued through the Client Credentials grant.
 const signetClientSubjectPrefix = "client:"
 
-// subjectTypeOf classifies a verified subject string. All three credential
-// paths funnel through it so the same subject can never be reported as a human
-// on one path and a machine on another — a handler gating human-only actions on
-// [Identity.SubjectType] would otherwise authorize a machine subject that
-// arrived by Personal API Key but reject the same subject in a JWT.
+// subjectTypeOf classifies a verified JWT subject string. Personal API Keys
+// are user-owned regardless of whether their user ID happens to begin with
+// Signet's machine-subject prefix.
 func subjectTypeOf(subject string) SubjectType {
 	if strings.HasPrefix(subject, signetClientSubjectPrefix) {
 		return SubjectClient

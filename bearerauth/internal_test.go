@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-signet/sdk-go/jwksauth"
+	"github.com/go-signet/sdk-go/oauth"
 )
 
 // stubTokenVerifier and valueTokenVerifier exercise the pointer and non-pointer
@@ -290,5 +291,77 @@ func TestIsNilVerifier(t *testing.T) {
 	}
 	if isNilVerifier(valueTokenVerifier{}) {
 		t.Error("isNilVerifier(value verifier) = true, want false")
+	}
+}
+
+func TestVerifierVerifyRejectsTypedNilJWTVerifier(t *testing.T) {
+	var typedNil *stubTokenVerifier
+	v := &Verifier{
+		jwt:         typedNil,
+		oauthClient: &oauth.Client{},
+		mode:        modeTokenInfo,
+	}
+
+	id, err := v.Verify(t.Context(), "not-a-jwt")
+	if id != nil {
+		t.Fatalf("Verify returned Identity %+v, want nil", id)
+	}
+	if !errors.Is(err, ErrVerifierUnavailable) {
+		t.Fatalf("Verify error = %v, want ErrVerifierUnavailable", err)
+	}
+	if errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("Verify error = %v, must not blame the credential", err)
+	}
+}
+
+func TestPersonalAPIKeySubjectTypeAlwaysUser(t *testing.T) {
+	const subject = "client:user-id-that-resembles-a-machine-subject"
+	exp := time.Now().Add(time.Hour).Unix()
+	tests := []struct {
+		name      string
+		normalize func() (*Identity, error)
+	}{
+		{
+			name: "tokeninfo",
+			normalize: func() (*Identity, error) {
+				return identityFromTokenInfo(&oauth.PersonalAPIKeyTokenInfo{
+					Active:      true,
+					UserID:      subject,
+					ClientID:    "client-app",
+					Exp:         exp,
+					Iss:         "https://issuer.example",
+					SubjectType: string(SubjectUser),
+					TokenType:   personalAPIKeyTokenType,
+				})
+			},
+		},
+		{
+			name: "introspection",
+			normalize: func() (*Identity, error) {
+				return identityFromIntrospection(&oauth.IntrospectionResult{
+					Active:    true,
+					ClientID:  "client-app",
+					TokenType: personalAPIKeyTokenType,
+					Exp:       exp,
+					Sub:       subject,
+					Iss:       "https://issuer.example",
+				})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, err := tt.normalize()
+			if err != nil {
+				t.Fatalf("normalize: %v", err)
+			}
+			if id.Subject != subject {
+				t.Errorf("Subject = %q, want %q", id.Subject, subject)
+			}
+			if id.SubjectType != SubjectUser {
+				t.Errorf("SubjectType = %q, want %q", id.SubjectType, SubjectUser)
+			}
+		})
 	}
 }

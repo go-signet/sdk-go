@@ -46,7 +46,7 @@ func identityFromTokenInfo(info *oauth.PersonalAPIKeyTokenInfo) (*Identity, erro
 
 	return &Identity{
 		Subject:        info.UserID,
-		SubjectType:    subjectTypeOf(info.UserID),
+		SubjectType:    SubjectUser,
 		Issuer:         info.Iss,
 		ClientAppID:    info.ClientID,
 		Scopes:         canonicalScopes([]string{info.Scope}),
@@ -83,7 +83,7 @@ func identityFromIntrospection(res *oauth.IntrospectionResult) (*Identity, error
 
 	return &Identity{
 		Subject:        res.Sub,
-		SubjectType:    subjectTypeOf(res.Sub),
+		SubjectType:    SubjectUser,
 		Issuer:         res.Iss,
 		ClientAppID:    res.ClientID,
 		Scopes:         canonicalScopes([]string{res.Scope}),

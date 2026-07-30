@@ -317,9 +317,10 @@ func validateEndpoint(raw, name string) (string, error) {
 func (v *Verifier) Verify(ctx context.Context, rawBearer string) (*Identity, error) {
 	// A Verifier that did not come from a constructor (a nil pointer, or a
 	// zero-value bearerauth.Verifier embedded in a struct a constructor forgot
-	// to populate) has no JWT verifier and no oauth client. Fail closed here
-	// rather than nil-panicking on the first authenticated request.
-	if v == nil || v.jwt == nil || v.oauthClient == nil || v.mode == 0 {
+	// to populate) has no usable JWT verifier and no oauth client. Check for a
+	// typed-nil verifier too, so even an internally malformed Verifier fails
+	// closed rather than nil-panicking on the first authenticated request.
+	if v == nil || isNilVerifier(v.jwt) || v.oauthClient == nil || v.mode == 0 {
 		return nil, unavailableStatic("verifier was not built by a constructor")
 	}
 
