@@ -107,7 +107,7 @@ same Client App the policy pins.
 | `Subject`        | `sub`                                   | `user_id`               | `sub`                   |
 | `SubjectType`    | `client` for `client:<id>`, else `user` | `user`                  | `user`                  |
 | `Issuer`         | `iss`                                   | `iss`                   | `iss`                   |
-| `ClientID`        | `client_id`                             | `client_id`             | `client_id`             |
+| `ClientID`       | `client_id`                             | `client_id`             | `client_id`             |
 | `Scopes`         | verified scopes                         | `strings.Fields(scope)` | `strings.Fields(scope)` |
 | `ExpiresAt`      | verified expiry                         | Unix `exp`              | Unix `exp`              |
 | `CredentialType` | `jwt`                                   | `personal_api_key`      | `personal_api_key`      |
