@@ -171,6 +171,24 @@ type TokenInfo struct {
 	SubjectType string `json:"subject_type"`
 }
 
+// PersonalAPIKeyTokenInfo represents the tokeninfo response Signet returns for
+// a complete Personal API Key (`sgk_…`).
+//
+// It is deliberately a separate type from [TokenInfo]: Personal API Key
+// responses additionally carry `token_type`, which a resource server must check
+// before trusting the rest of the payload, and adding an exported field to the
+// existing [TokenInfo] would break callers using unkeyed struct literals.
+type PersonalAPIKeyTokenInfo struct {
+	Active      bool   `json:"active"`
+	UserID      string `json:"user_id"`
+	ClientID    string `json:"client_id"`
+	Scope       string `json:"scope"`
+	Exp         int64  `json:"exp"`
+	Iss         string `json:"iss"`
+	SubjectType string `json:"subject_type"`
+	TokenType   string `json:"token_type"`
+}
+
 // Error represents an OAuth 2.0 error response (RFC 6749 §5.2).
 type Error struct {
 	Code        string `json:"error"`
@@ -225,6 +243,77 @@ func WithHTTPClient(httpClient *retry.Client) Option {
 	}
 }
 
+// RewindBodyMiddleware restores a replayable request body before every retry
+// attempt. Install it with [retry.WithPerAttemptMiddleware]
+// on any retry client used for form POSTs.
+//
+// go-httpretry clones the original request per attempt, but a clone shares the
+// already-consumed Body reader; only Request.GetBody can produce a fresh one.
+// Without this, a form POST is sent in full on the first attempt and as zero
+// bytes on every retry, which net/http rejects before the request leaves the
+// process ("ContentLength=N with Body length 0"). That makes retries a no-op
+// for every 429/5xx and — worse — replaces the real upstream error with the
+// ContentLength error, so callers can no longer match it with errors.As
+// against *[Error].
+//
+// When a body is replayed, the incoming Body is closed before a fresh copy is
+// installed on a cloned request. The wrapped RoundTripper owns that fresh copy
+// under the standard net/http body lifecycle.
+//
+// It is a no-op for bodyless requests such as the tokeninfo/userinfo GETs.
+func RewindBodyMiddleware(next http.RoundTripper) http.RoundTripper {
+	return retry.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.GetBody == nil {
+			return next.RoundTrip(req)
+		}
+		if req.Body != nil {
+			// go-httpretry shallow-clones the original request for every
+			// attempt, so retries may close the same Body more than once.
+			// Match net/http's rewind behavior and ignore Close errors.
+			_ = req.Body.Close()
+		}
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, err
+		}
+		// Clone rather than mutate: RoundTrip must not modify its argument.
+		req = req.Clone(req.Context())
+		req.Body = body
+		return next.RoundTrip(req)
+	})
+}
+
+// NewDefaultHTTPClient builds the retry client this package uses when the
+// caller supplies none: the go-httpretry realtime preset with logging disabled
+// and [RewindBodyMiddleware] installed so retried form POSTs replay their body.
+// Redirects are refused so a 307/308 cannot forward a credential-bearing form
+// to another host.
+//
+// It is exported so every package in the SDK — and any caller assembling its
+// own client — shares one transport policy instead of re-deriving it. Options
+// are applied after these defaults, so a caller can intentionally replace the
+// underlying *http.Client (and therefore its redirect policy) with
+// [retry.WithHTTPClient].
+func NewDefaultHTTPClient(opts ...retry.Option) (*retry.Client, error) {
+	httpClient := *http.DefaultClient
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	defaults := []retry.Option{
+		retry.WithNoLogging(),
+		retry.WithPerAttemptMiddleware(RewindBodyMiddleware),
+		// Preserve any process-wide Transport, Timeout, or Jar configured on
+		// http.DefaultClient at construction time while replacing its unsafe
+		// redirect policy without mutating the global client.
+		retry.WithHTTPClient(&httpClient),
+	}
+	client, err := retry.NewRealtimeClient(append(defaults, opts...)...)
+	if err != nil {
+		return nil, fmt.Errorf("oauth: create http client: %w", err)
+	}
+	return client, nil
+}
+
 // NewClient creates a new OAuth 2.0 client.
 // A default retry HTTP client is created only when no client is provided via WithHTTPClient.
 func NewClient(clientID string, endpoints Endpoints, opts ...Option) (*Client, error) {
@@ -239,9 +328,9 @@ func NewClient(clientID string, endpoints Endpoints, opts ...Option) (*Client, e
 	}
 
 	if c.httpClient == nil {
-		httpClient, err := retry.NewRealtimeClient(retry.WithNoLogging())
+		httpClient, err := NewDefaultHTTPClient()
 		if err != nil {
-			return nil, fmt.Errorf("oauth: create http client: %w", err)
+			return nil, err
 		}
 		c.httpClient = httpClient
 	}
@@ -373,6 +462,7 @@ func (c *Client) Revoke(ctx context.Context, token string) error {
 		retry.WithBody("application/x-www-form-urlencoded", strings.NewReader(data.Encode())),
 	)
 	if err != nil {
+		closeRetryResponse(resp)
 		return fmt.Errorf("oauth: revoke request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -436,6 +526,49 @@ func (c *Client) TokenInfoRequest(ctx context.Context, accessToken string) (*Tok
 	return &info, nil
 }
 
+// PersonalAPIKeyTokenInfoRequest verifies a complete Signet Personal API Key
+// (`sgk_…`) through the tokeninfo endpoint.
+//
+// The request carries only `Authorization: Bearer <personalAPIKey>` — no client
+// ID and no client secret — and the key never appears in the URL or query
+// string. Signet collapses unknown, malformed, revoked, expired, and disabled
+// keys into a uniform `401 invalid_token`, so callers cannot distinguish those
+// cases from each other.
+func (c *Client) PersonalAPIKeyTokenInfoRequest(
+	ctx context.Context,
+	personalAPIKey string,
+) (*PersonalAPIKeyTokenInfo, error) {
+	if err := requireEndpoint(c.endpoints.TokenInfoURL, "tokeninfo"); err != nil {
+		return nil, err
+	}
+
+	var info PersonalAPIKeyTokenInfo
+	if err := c.getJSON(
+		ctx,
+		c.endpoints.TokenInfoURL,
+		personalAPIKey,
+		"tokeninfo",
+		&info,
+	); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+// closeRetryResponse closes resp.Body when the retry client returned both a
+// response and an error.
+//
+// go-httpretry keeps the final attempt's body open and returns
+// (non-nil *http.Response, non-nil *retry.RetryError) once retries are
+// exhausted. Returning early on err without this call leaks that body and its
+// connection. It is a no-op on the (nil, err) transport-failure shape.
+func closeRetryResponse(resp *http.Response) {
+	// net/http guarantees a non-nil Body on any response a client returns.
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+}
+
 // getJSON sends an authenticated GET request and decodes a JSON response,
 // applying the same response-size cap as postForm. op identifies the operation
 // (e.g., "userinfo", "tokeninfo") for error messages and oversize reporting.
@@ -444,6 +577,7 @@ func (c *Client) getJSON(ctx context.Context, endpoint, accessToken, op string, 
 		retry.WithHeader("Authorization", "Bearer "+accessToken),
 	)
 	if err != nil {
+		closeRetryResponse(resp)
 		return fmt.Errorf("oauth: %s request: %w", op, err)
 	}
 	defer resp.Body.Close()
@@ -486,6 +620,7 @@ func (c *Client) postForm(ctx context.Context, endpoint string, data url.Values,
 		retry.WithBody("application/x-www-form-urlencoded", strings.NewReader(data.Encode())),
 	)
 	if err != nil {
+		closeRetryResponse(resp)
 		return fmt.Errorf("oauth: request to %s: %w", endpoint, err)
 	}
 	defer resp.Body.Close()

@@ -23,6 +23,17 @@
 // tolerate the revocation window equalling the lifetime. Pick online when you
 // need instant revocation.
 //
+// # Routes that also accept Personal API Keys
+//
+// A [Verifier] or [MultiVerifier] validates JWTs only. If a route must also
+// accept a complete Signet Personal API Key (`sgk_…`), inject this package's
+// [TokenVerifier] into
+// [github.com/go-signet/sdk-go/bearerauth]: it keeps JWT verification offline
+// here, verifies keys online on every request, and applies one shared issuer,
+// Client App, and scope policy to both. That package is framework-neutral —
+// use it instead of [Middleware] when you are not on net/http, or when one
+// route has to handle both credential kinds.
+//
 // # Single issuer
 //
 // For a service that trusts one Signet:

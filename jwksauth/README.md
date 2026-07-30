@@ -21,6 +21,15 @@ that matches your latency/revocation trade-off:
 Common pattern: short access-token lifetimes (5–15 min) + offline JWKS for
 the hot path, online introspection for revocation-sensitive mutations.
 
+### Routes that also accept Personal API Keys
+
+The verifiers here handle JWTs only. If a route must accept either a JWT **or**
+a complete Signet Personal API Key (`sgk_…`), inject a `jwksauth.TokenVerifier`
+into [`bearerauth/`](../bearerauth/): JWTs stay offline here, keys are verified
+online on every request, and one shared issuer / Client App / scope policy is
+applied to both. `bearerauth` is also the option to reach for when your router
+is not `net/http` — it returns a typed `Identity` instead of writing responses.
+
 ## Single issuer
 
 ```go

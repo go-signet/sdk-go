@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 
-	retry "github.com/appleboy/go-httpretry"
-
 	"github.com/go-signet/sdk-go/authflow"
 	"github.com/go-signet/sdk-go/credstore"
 	"github.com/go-signet/sdk-go/discovery"
@@ -107,7 +105,7 @@ func New(
 	}
 
 	// 1. Create a shared HTTP client for both discovery and OAuth
-	httpClient, err := retry.NewRealtimeClient(retry.WithNoLogging())
+	httpClient, err := oauth.NewDefaultHTTPClient()
 	if err != nil {
 		return nil, nil, fmt.Errorf("signet: create http client: %w", err)
 	}

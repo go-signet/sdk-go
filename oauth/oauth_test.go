@@ -4,10 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	retry "github.com/appleboy/go-httpretry"
 )
 
 func setupTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Client) {
@@ -672,4 +678,651 @@ func TestConfidentialClientAuth(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPersonalAPIKeyTokenInfoRequest(t *testing.T) {
+	const key = "sgk_abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst"
+
+	// Guarded: the handler runs on the server's goroutine and the assertions
+	// below run on the test's, and the HTTP round-trip alone is not a
+	// happens-before edge the race detector recognizes.
+	var (
+		mu        sync.Mutex
+		gotMethod string
+		gotAuth   string
+		gotQuery  string
+	)
+	_, client := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotMethod = r.Method
+		gotAuth = r.Header.Get("Authorization")
+		gotQuery = r.URL.RawQuery
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"active":       true,
+			"user_id":      "user-123",
+			"client_id":    "test-client",
+			"scope":        "read write",
+			"exp":          1700000000,
+			"iss":          "https://auth.example.com",
+			"subject_type": "user",
+			"token_type":   "personal_api_key",
+		})
+	})
+
+	info, err := client.PersonalAPIKeyTokenInfoRequest(context.Background(), key)
+	if err != nil {
+		t.Fatalf("PersonalAPIKeyTokenInfoRequest: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if gotMethod != http.MethodGet {
+		t.Errorf("method = %q, want GET", gotMethod)
+	}
+	if gotAuth != "Bearer "+key {
+		t.Errorf("Authorization = %q, want the key as a Bearer credential", gotAuth)
+	}
+	if gotQuery != "" {
+		t.Errorf("query = %q, want the key kept out of the URL", gotQuery)
+	}
+
+	want := PersonalAPIKeyTokenInfo{
+		Active:      true,
+		UserID:      "user-123",
+		ClientID:    "test-client",
+		Scope:       "read write",
+		Exp:         1700000000,
+		Iss:         "https://auth.example.com",
+		SubjectType: "user",
+		TokenType:   "personal_api_key",
+	}
+	if *info != want {
+		t.Errorf("info = %+v, want %+v", *info, want)
+	}
+}
+
+func TestPersonalAPIKeyTokenInfoRequest_NoEndpoint(t *testing.T) {
+	client, err := NewClient("cid", Endpoints{})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	if _, err := client.PersonalAPIKeyTokenInfoRequest(context.Background(), "sgk_x"); err == nil {
+		t.Fatal("expected an error when the tokeninfo endpoint is not configured")
+	}
+}
+
+type trackedRequestBody struct {
+	io.Reader
+	closed   atomic.Bool
+	closeErr error
+}
+
+func (b *trackedRequestBody) Close() error {
+	b.closed.Store(true)
+	return b.closeErr
+}
+
+func TestRewindBodyMiddlewareBodyLifecycle(t *testing.T) {
+	newRequest := func(t *testing.T, body io.ReadCloser) *http.Request {
+		t.Helper()
+		req, err := http.NewRequestWithContext(
+			t.Context(),
+			http.MethodPost,
+			"https://auth.example.com/oauth/introspect",
+			body,
+		)
+		if err != nil {
+			t.Fatalf("NewRequestWithContext: %v", err)
+		}
+		return req
+	}
+
+	t.Run("closes replaced body before downstream", func(t *testing.T) {
+		original := &trackedRequestBody{Reader: strings.NewReader("original")}
+		replacement := &trackedRequestBody{Reader: strings.NewReader("replacement")}
+		req := newRequest(t, original)
+		req.GetBody = func() (io.ReadCloser, error) {
+			if !original.closed.Load() {
+				t.Error("original body was not closed before GetBody")
+			}
+			return replacement, nil
+		}
+
+		next := retry.RoundTripperFunc(
+			func(got *http.Request) (*http.Response, error) {
+				if got == req {
+					t.Error("middleware forwarded the original request instead of a clone")
+				}
+				if got.Body != replacement {
+					t.Error("downstream did not receive the replacement body")
+				}
+				if replacement.closed.Load() {
+					t.Error("replacement body was closed before downstream received it")
+				}
+				body, err := io.ReadAll(got.Body)
+				if err != nil {
+					t.Errorf("ReadAll: %v", err)
+				}
+				if string(body) != "replacement" {
+					t.Errorf("body = %q, want replacement", body)
+				}
+				if err := got.Body.Close(); err != nil {
+					t.Errorf("Close replacement body: %v", err)
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Body:       http.NoBody,
+					Header:     make(http.Header),
+					Request:    got,
+				}, nil
+			},
+		)
+
+		resp, err := RewindBodyMiddleware(next).RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+		if req.Body != original {
+			t.Error("middleware mutated the original request Body field")
+		}
+		if !original.closed.Load() {
+			t.Error("original body was not closed")
+		}
+		if !replacement.closed.Load() {
+			t.Error("downstream did not close the replacement body")
+		}
+	})
+
+	t.Run("GetBody failure closes original and skips downstream", func(t *testing.T) {
+		original := &trackedRequestBody{Reader: strings.NewReader("original")}
+		req := newRequest(t, original)
+		wantErr := errors.New("cannot reopen body")
+		req.GetBody = func() (io.ReadCloser, error) {
+			return nil, wantErr
+		}
+
+		var downstreamCalled atomic.Bool
+		next := retry.RoundTripperFunc(
+			func(*http.Request) (*http.Response, error) {
+				downstreamCalled.Store(true)
+				return nil, errors.New("unexpected downstream call")
+			},
+		)
+
+		resp, err := RewindBodyMiddleware(next).RoundTrip(req)
+		if resp != nil {
+			_ = resp.Body.Close()
+			t.Errorf("response = %+v, want nil", resp)
+		}
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("err = %v, want %v", err, wantErr)
+		}
+		if !original.closed.Load() {
+			t.Error("original body was not closed")
+		}
+		if downstreamCalled.Load() {
+			t.Error("downstream was called after GetBody failed")
+		}
+	})
+
+	t.Run("Close failure does not block replay", func(t *testing.T) {
+		closeErr := errors.New("close failed")
+		original := &trackedRequestBody{
+			Reader:   strings.NewReader("original"),
+			closeErr: closeErr,
+		}
+		replacement := &trackedRequestBody{Reader: strings.NewReader("replacement")}
+		req := newRequest(t, original)
+		req.GetBody = func() (io.ReadCloser, error) {
+			return replacement, nil
+		}
+
+		var downstreamCalled atomic.Bool
+		next := retry.RoundTripperFunc(
+			func(got *http.Request) (*http.Response, error) {
+				downstreamCalled.Store(true)
+				_ = got.Body.Close()
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Body:       http.NoBody,
+					Header:     make(http.Header),
+					Request:    got,
+				}, nil
+			},
+		)
+
+		resp, err := RewindBodyMiddleware(next).RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip propagated the Body.Close error: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+		if !original.closed.Load() {
+			t.Error("original body Close was not attempted")
+		}
+		if !downstreamCalled.Load() {
+			t.Error("downstream was not called after Body.Close failed")
+		}
+	})
+
+	t.Run("without GetBody passes through unchanged", func(t *testing.T) {
+		original := &trackedRequestBody{Reader: strings.NewReader("original")}
+		req := newRequest(t, original)
+
+		next := retry.RoundTripperFunc(
+			func(got *http.Request) (*http.Response, error) {
+				if got != req {
+					t.Error("middleware cloned a request without GetBody")
+				}
+				if original.closed.Load() {
+					t.Error("middleware closed a body it did not replace")
+				}
+				_ = got.Body.Close()
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Body:       http.NoBody,
+					Header:     make(http.Header),
+					Request:    got,
+				}, nil
+			},
+		)
+
+		resp, err := RewindBodyMiddleware(next).RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+		if !original.closed.Load() {
+			t.Error("downstream did not close the original body")
+		}
+	})
+}
+
+// trackingTransport records every response body it hands back so a test can
+// assert none were leaked.
+type trackingTransport struct {
+	mu     sync.Mutex
+	bodies []*trackedBody
+}
+
+type trackedBody struct {
+	io.ReadCloser
+	closed atomic.Bool
+}
+
+func (b *trackedBody) Close() error {
+	b.closed.Store(true)
+	return b.ReadCloser.Close()
+}
+
+func (t *trackingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	tb := &trackedBody{ReadCloser: resp.Body}
+	resp.Body = tb
+
+	t.mu.Lock()
+	t.bodies = append(t.bodies, tb)
+	t.mu.Unlock()
+
+	return resp, nil
+}
+
+func (t *trackingTransport) assertAllClosed(tb testing.TB, wantCount int) {
+	tb.Helper()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if len(t.bodies) != wantCount {
+		tb.Errorf("upstream responses = %d, want %d", len(t.bodies), wantCount)
+	}
+	for i, b := range t.bodies {
+		if !b.closed.Load() {
+			tb.Errorf("response body %d was never closed", i)
+		}
+	}
+}
+
+// newTrackingClient builds a client whose retry behavior is fast enough for a
+// unit test, that refuses redirects, and whose response bodies are all
+// observable.
+func newTrackingClient(t *testing.T, endpoints Endpoints) (*Client, *trackingTransport) {
+	t.Helper()
+	tracker := &trackingTransport{}
+	httpClient, err := retry.NewClient(
+		retry.WithNoLogging(),
+		retry.WithMaxRetries(2),
+		retry.WithInitialRetryDelay(time.Millisecond),
+		retry.WithMaxRetryDelay(2*time.Millisecond),
+		// The same body-replay middleware the package default installs.
+		// Without it a retried POST is rejected by net/http before it reaches
+		// the server and the later attempts produce no response at all — which
+		// would hide exactly the body leak this test is about.
+		retry.WithPerAttemptMiddleware(RewindBodyMiddleware),
+		retry.WithHTTPClient(&http.Client{
+			Transport: tracker,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("retry.NewClient: %v", err)
+	}
+	client, err := NewClient("cid", endpoints,
+		WithClientSecret("secret"),
+		WithHTTPClient(httpClient),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	return client, tracker
+}
+
+// TestResponseBodyClosedOnRetryExhaustion covers the shape go-httpretry
+// returns once retries run out: a non-nil response together with a non-nil
+// *retry.RetryError. Returning early on the error alone used to leak the final
+// attempt's body and its connection.
+func TestResponseBodyClosedOnRetryExhaustion(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*Client) error
+	}{
+		{"getJSON via TokenInfoRequest", func(c *Client) error {
+			_, err := c.TokenInfoRequest(context.Background(), "tok")
+			return err
+		}},
+		{"getJSON via PersonalAPIKeyTokenInfoRequest", func(c *Client) error {
+			_, err := c.PersonalAPIKeyTokenInfoRequest(context.Background(), "sgk_x")
+			return err
+		}},
+		{"postForm via Introspect", func(c *Client) error {
+			_, err := c.Introspect(context.Background(), "tok")
+			return err
+		}},
+		{"Revoke", func(c *Client) error {
+			return c.Revoke(context.Background(), "tok")
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_, _ = w.Write([]byte(`{"error":"temporarily_unavailable"}`))
+				}),
+			)
+			t.Cleanup(server.Close)
+
+			client, tracker := newTrackingClient(t, Endpoints{
+				TokenInfoURL:     server.URL + "/tokeninfo",
+				IntrospectionURL: server.URL + "/introspect",
+				RevocationURL:    server.URL + "/revoke",
+			})
+
+			if err := tt.call(client); err == nil {
+				t.Fatal("expected an error after exhausted retries")
+			}
+			// Initial attempt plus two retries, every body closed.
+			tracker.assertAllClosed(t, 3)
+		})
+	}
+}
+
+// TestResponseBodyClosedOnEveryOutcome checks the non-retry paths still close
+// their bodies: success, a non-2xx error response, a decode failure, and an
+// oversized payload.
+func TestResponseBodyClosedOnEveryOutcome(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		wantErr bool
+	}{
+		{
+			name: "success",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"active": true})
+			},
+		},
+		{
+			name: "non-2xx",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":"invalid_token"}`))
+			},
+			wantErr: true,
+		},
+		{
+			name: "decode failure",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"active":`))
+			},
+			wantErr: true,
+		},
+		{
+			name: "oversized payload",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"scope":"`))
+				_, _ = w.Write([]byte(strings.Repeat("x", maxResponseBytes+1)))
+				_, _ = w.Write([]byte(`"}`))
+			},
+			wantErr: true,
+		},
+		{
+			name: "redirect refused by a non-redirecting client",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Location", "https://elsewhere.example.com/tokeninfo")
+				w.WriteHeader(http.StatusTemporaryRedirect)
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(tt.handler)
+			t.Cleanup(server.Close)
+
+			client, tracker := newTrackingClient(t, Endpoints{
+				TokenInfoURL: server.URL + "/tokeninfo",
+			})
+
+			_, err := client.PersonalAPIKeyTokenInfoRequest(context.Background(), "sgk_x")
+			if tt.wantErr != (err != nil) {
+				t.Fatalf("err = %v, wantErr = %v", err, tt.wantErr)
+			}
+			tracker.assertAllClosed(t, 1)
+		})
+	}
+}
+
+// TestDefaultClientReplaysFormBodyOnRetry pins the property that made retries
+// on every POST path a no-op before RewindBodyMiddleware was installed in the
+// package default: go-httpretry clones the request per attempt, but a clone
+// shares the already-consumed Body reader, so attempts 2..N were rejected by
+// net/http with "ContentLength=N with Body length 0" before leaving the
+// process. The upstream error was replaced by that one, so callers could no
+// longer match it with errors.As against *Error.
+func TestDefaultClientReplaysFormBodyOnRetry(t *testing.T) {
+	var (
+		mu     sync.Mutex
+		bodies []string
+	)
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+
+			mu.Lock()
+			bodies = append(bodies, string(body))
+			attempt := len(bodies)
+			mu.Unlock()
+
+			// Fail the first attempt with a retryable status, then succeed.
+			if attempt == 1 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"error":"temporarily_unavailable"}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"active": true, "sub": "user-1"})
+		}),
+	)
+	t.Cleanup(server.Close)
+
+	// No WithHTTPClient: exercise exactly the client NewClient builds.
+	client, err := NewClient("cid", Endpoints{IntrospectionURL: server.URL + "/introspect"},
+		WithClientSecret("secret"),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	res, err := client.Introspect(context.Background(), "tok")
+	if err != nil {
+		t.Fatalf("Introspect: %v", err)
+	}
+	if !res.Active || res.Sub != "user-1" {
+		t.Errorf("result = %+v, want the retried response to be decoded", res)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 2 {
+		t.Fatalf("upstream attempts = %d, want 2 (the retry never reached the server)", len(bodies))
+	}
+	if bodies[0] == "" || bodies[1] != bodies[0] {
+		t.Errorf("attempt bodies = %q, want the form replayed identically on the retry", bodies)
+	}
+	if !strings.Contains(bodies[1], "token=tok") {
+		t.Errorf("retried body = %q, want it to carry the form fields", bodies[1])
+	}
+}
+
+func TestDefaultHTTPClientRedirectPolicy(t *testing.T) {
+	t.Run("refuses redirects by default", func(t *testing.T) {
+		for _, status := range []int{
+			http.StatusMovedPermanently,
+			http.StatusFound,
+			http.StatusSeeOther,
+			http.StatusTemporaryRedirect,
+			http.StatusPermanentRedirect,
+		} {
+			t.Run(http.StatusText(status), func(t *testing.T) {
+				var targetCalls atomic.Int64
+				target := httptest.NewServer(http.HandlerFunc(
+					func(w http.ResponseWriter, _ *http.Request) {
+						targetCalls.Add(1)
+						w.Header().Set("Content-Type", "application/json")
+						_ = json.NewEncoder(w).Encode(map[string]any{"active": true})
+					},
+				))
+				t.Cleanup(target.Close)
+
+				source := httptest.NewServer(http.HandlerFunc(
+					func(w http.ResponseWriter, _ *http.Request) {
+						w.Header().Set("Location", target.URL+"/capture")
+						w.WriteHeader(status)
+					},
+				))
+				t.Cleanup(source.Close)
+
+				client, err := NewClient(
+					"client-id",
+					Endpoints{IntrospectionURL: source.URL + "/introspect"},
+					WithClientSecret("client-secret"),
+				)
+				if err != nil {
+					t.Fatalf("NewClient: %v", err)
+				}
+
+				if _, err := client.Introspect(t.Context(), "token"); err == nil {
+					t.Fatal("Introspect error = nil, want refused redirect")
+				}
+				if got := targetCalls.Load(); got != 0 {
+					t.Errorf("redirect target calls = %d, want 0", got)
+				}
+			})
+		}
+	})
+
+	t.Run("explicit HTTP client override can follow redirects", func(t *testing.T) {
+		type capturedForm struct {
+			clientID     string
+			clientSecret string
+			token        string
+		}
+		captured := make(chan capturedForm, 1)
+		target := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				if err := r.ParseForm(); err != nil {
+					t.Errorf("ParseForm: %v", err)
+				}
+				captured <- capturedForm{
+					clientID:     r.PostForm.Get("client_id"),
+					clientSecret: r.PostForm.Get("client_secret"),
+					token:        r.PostForm.Get("token"),
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"active": true})
+			},
+		))
+		t.Cleanup(target.Close)
+
+		source := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Location", target.URL+"/capture")
+				w.WriteHeader(http.StatusTemporaryRedirect)
+			},
+		))
+		t.Cleanup(source.Close)
+
+		retryClient, err := NewDefaultHTTPClient(
+			retry.WithHTTPClient(&http.Client{}),
+		)
+		if err != nil {
+			t.Fatalf("NewDefaultHTTPClient: %v", err)
+		}
+		client, err := NewClient(
+			"client-id",
+			Endpoints{IntrospectionURL: source.URL + "/introspect"},
+			WithClientSecret("client-secret"),
+			WithHTTPClient(retryClient),
+		)
+		if err != nil {
+			t.Fatalf("NewClient: %v", err)
+		}
+
+		res, err := client.Introspect(t.Context(), "token")
+		if err != nil {
+			t.Fatalf("Introspect: %v", err)
+		}
+		if !res.Active {
+			t.Errorf("result = %+v, want active response from redirect target", res)
+		}
+
+		got := <-captured
+		want := capturedForm{
+			clientID:     "client-id",
+			clientSecret: "client-secret",
+			token:        "token",
+		}
+		if got != want {
+			t.Errorf("redirected form = %+v, want %+v", got, want)
+		}
+	})
 }

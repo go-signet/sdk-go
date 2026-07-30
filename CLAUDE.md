@@ -4,11 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Go SDK for Signet — currently provides the `credstore` package for secure credential storage with OS keyring integration and file-based fallback.
+Go SDK for Signet. Module: `github.com/go-signet/sdk-go` (Go 1.25+)
 
-Module: `github.com/go-signet/sdk-go` (Go 1.25+)
+Packages:
 
-The `jwksauth` package's default private-claim prefix is `"extra"`, matching the upstream Signet `JWT_PRIVATE_CLAIM_PREFIX` default; deployments that override the server-side value must pass the same string via `jwksauth.WithPrivateClaimPrefix(...)`.
+| Package       | Role                                                                             |
+| ------------- | -------------------------------------------------------------------------------- |
+| `credstore`   | Credential storage: OS keyring with an encrypted file fallback                    |
+| `discovery`   | OIDC auto-discovery with caching                                                  |
+| `oauth`       | OAuth 2.0 HTTP client (token, revoke, introspect, userinfo, tokeninfo)            |
+| `authflow`    | CLI flow orchestration (Device Code, Auth Code + PKCE, auto-refresh TokenSource)  |
+| `clientcreds` | Client Credentials token source for M2M                                          |
+| `middleware`  | `net/http` Bearer validation, online (tokeninfo / introspection per request)      |
+| `jwksauth`    | `net/http` Bearer validation, offline (cached JWKS, single + multi-issuer)        |
+| `bearerauth`  | Framework-neutral verifier for JWT **or** `sgk_…` Personal API Key on one route   |
+
+Cross-cutting notes:
+
+- The `jwksauth` package's default private-claim prefix is `"extra"`, matching the upstream Signet `JWT_PRIVATE_CLAIM_PREFIX` default; deployments that override the server-side value must pass the same string via `jwksauth.WithPrivateClaimPrefix(...)`.
+- Every retry client used for form POSTs must install `oauth.RewindBodyMiddleware`; build defaults via `oauth.NewDefaultHTTPClient()` rather than calling `retry.NewRealtimeClient` directly. go-httpretry clones the request per attempt but shares the consumed body reader, so without it retried POSTs are rejected by `net/http` before they leave the process.
+- `oauth.NewDefaultHTTPClient()` must refuse redirects so OAuth forms and Bearer credentials cannot be forwarded to another host. A caller may replace that policy only by explicitly supplying `retry.WithHTTPClient`.
+- go-httpretry returns a non-nil `*http.Response` alongside its error once retries are exhausted. Every `httpClient.Get`/`Post` call site must close that body on the error path or it leaks the body and its connection.
 
 ## Common Commands
 
