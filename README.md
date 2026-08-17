@@ -5,6 +5,7 @@
 [![Trivy Security Scan](https://github.com/go-signet/sdk-go/actions/workflows/security.yml/badge.svg)](https://github.com/go-signet/sdk-go/actions/workflows/security.yml)
 [![codecov](https://codecov.io/gh/go-signet/sdk-go/branch/main/graph/badge.svg)](https://codecov.io/gh/go-signet/sdk-go)
 [![Go Reference](https://pkg.go.dev/badge/github.com/go-signet/sdk-go.svg)](https://pkg.go.dev/github.com/go-signet/sdk-go)
+[![GitHub release](https://img.shields.io/github/v/release/go-signet/sdk-go?include_prereleases)](https://github.com/go-signet/sdk-go/releases)
 
 Go SDK for [Signet](https://github.com/go-signet). Requires Go 1.25+.
 
