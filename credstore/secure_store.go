@@ -46,7 +46,8 @@ func DefaultSecureStore[T any](
 	return NewSecureStore[T](
 		NewEncryptedFileStore[T](serviceName, filePath+".enc", codec),
 		NewFileStore[T](filePath, codec),
-		opts...)
+		opts...,
+	)
 }
 
 // SecureStore is a composite Store that tries the keyring-backed primary
