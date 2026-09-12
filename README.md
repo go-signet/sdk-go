@@ -7,7 +7,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/go-signet/sdk-go.svg)](https://pkg.go.dev/github.com/go-signet/sdk-go)
 [![GitHub release](https://img.shields.io/github/v/release/go-signet/sdk-go?include_prereleases)](https://github.com/go-signet/sdk-go/releases)
 
-Go SDK for [Signet](https://github.com/go-signet). Requires Go 1.25+.
+Go SDK for [Signet](https://github.com/go-signet). Requires Go 1.26+.
 
 ## Installation
 

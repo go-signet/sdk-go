@@ -398,8 +398,7 @@ func (v *Verifier) verifyPersonalAPIKey(ctx context.Context, raw string) (*Ident
 // its credential is invalid. Every other status, including a refused 3xx,
 // is an endpoint problem.
 func (v *Verifier) classifyOnlineError(ctx context.Context, err error) error {
-	var oauthErr *oauth.Error
-	if errors.As(err, &oauthErr) {
+	if oauthErr, ok := errors.AsType[*oauth.Error](err); ok {
 		if v.mode == modeTokenInfo && oauthErr.StatusCode == http.StatusUnauthorized {
 			return invalidCredential("personal API key rejected by the tokeninfo endpoint")
 		}
