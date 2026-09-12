@@ -65,6 +65,30 @@ func TestTokenSource_Token(t *testing.T) {
 	}
 }
 
+func TestTokenSource_Resources(t *testing.T) {
+	var got []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		got = append(got, r.PostForm["resource"]...)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"token","token_type":"Bearer","expires_in":300}`))
+	}))
+	t.Cleanup(server.Close)
+	client, err := oauth.NewClient("client", oauth.Endpoints{TokenURL: server.URL})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	ts := NewTokenSource(client, WithResources("https://api-a.example.com"))
+	if _, err := ts.Token(t.Context()); err != nil {
+		t.Fatalf("Token: %v", err)
+	}
+	if len(got) != 1 || got[0] != "https://api-a.example.com" {
+		t.Fatalf("resources = %v", got)
+	}
+}
+
 func TestTokenSource_Cache(t *testing.T) {
 	_, oauthClient := setupCCServer(t)
 

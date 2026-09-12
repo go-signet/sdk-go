@@ -1,6 +1,7 @@
 package jwksauth
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -40,6 +41,9 @@ type Claims struct {
 	ServiceAccount string
 	Project        string
 	UID            string
+	// Actor identifies the confidential client acting on behalf of Subject.
+	// It is nil for ordinary, nondelegated tokens.
+	Actor *Actor
 
 	// Extras carries any payload keys that are neither in the SDK's
 	// reserved-key set (see [staticReservedClaimKeys]) nor the four
@@ -50,6 +54,11 @@ type Claims struct {
 	// taken from the decoded JSON map by reference; callers should treat
 	// them as read-only.
 	Extras map[string]any
+}
+
+// Actor is Signet's issuer-controlled, single-hop OBO actor claim.
+type Actor struct {
+	Subject string
 }
 
 // TokenInfo is the result of a successful verification. It embeds the
@@ -108,6 +117,7 @@ func (t *TokenInfo) Extra(key string) (any, bool) {
 var staticReservedClaimKeys = map[string]struct{}{
 	"iss": {}, "sub": {}, "aud": {}, "exp": {}, "nbf": {}, "iat": {}, "jti": {},
 	"type": {}, "scope": {}, "user_id": {}, "client_id": {},
+	"act": {}, "may_act": {},
 	"azp": {}, "amr": {}, "acr": {}, "auth_time": {}, "nonce": {}, "at_hash": {},
 }
 
@@ -148,6 +158,13 @@ func newTokenInfo(tok *oidc.IDToken, keys claimKeys) (*TokenInfo, error) {
 		ServiceAccount: stringFromRaw(raw, keys.serviceAccount),
 		UID:            stringFromRaw(raw, keys.uid),
 	}
+	if value, ok := raw["act"]; ok {
+		actor, err := actorFromRaw(value)
+		if err != nil {
+			return nil, err
+		}
+		c.Actor = actor
+	}
 
 	for k, v := range raw {
 		if _, reserved := staticReservedClaimKeys[k]; reserved {
@@ -167,6 +184,20 @@ func newTokenInfo(tok *oidc.IDToken, keys claimKeys) (*TokenInfo, error) {
 		Claims:  c,
 		Scopes:  strings.Fields(c.Scope),
 	}, nil
+}
+
+func actorFromRaw(value any) (*Actor, error) {
+	claim, ok := value.(map[string]any)
+	if !ok || len(claim) != 1 {
+		return nil, errors.New("decode JWT claims: invalid act claim")
+	}
+	subject, ok := claim["sub"].(string)
+	if !ok || subject != strings.TrimSpace(subject) ||
+		!strings.HasPrefix(subject, "client:") ||
+		strings.TrimPrefix(subject, "client:") == "" {
+		return nil, errors.New("decode JWT claims: invalid act subject")
+	}
+	return &Actor{Subject: subject}, nil
 }
 
 // stringFromRaw returns the string value of key in raw, or "" if absent or

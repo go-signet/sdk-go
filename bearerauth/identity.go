@@ -81,6 +81,15 @@ type Identity struct {
 
 	// CredentialType records which path produced this Identity.
 	CredentialType CredentialType
+
+	// Actor identifies the confidential client acting on behalf of Subject.
+	// It is nil for ordinary JWTs and Personal API Keys.
+	Actor *Actor
+}
+
+// Actor is the verified single-hop OBO actor associated with an identity.
+type Actor struct {
+	Subject string
 }
 
 // HasScope reports whether the identity carries the named scope. Matching is

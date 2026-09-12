@@ -1,11 +1,13 @@
 // Package signet provides a one-call entry point for authenticating with
-// an Signet server and obtaining an OAuth token.
+// a Signet server and obtaining an OAuth token.
 package signet
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/go-signet/sdk-go/authflow"
 	"github.com/go-signet/sdk-go/credstore"
@@ -31,6 +33,7 @@ type config struct {
 	storePath   string
 	localPort   int
 	flowMode    FlowMode
+	resources   []string
 }
 
 // Option configures the New function.
@@ -40,6 +43,15 @@ type Option func(*config)
 func WithScopes(scopes ...string) Option {
 	return func(cfg *config) {
 		cfg.scopes = scopes
+	}
+}
+
+// WithResources sets the RFC 8707 resource indicators for authentication and
+// token refresh. Values are copied so callers may safely reuse their slice.
+func WithResources(resources ...string) Option {
+	resources = slices.Clone(resources)
+	return func(cfg *config) {
+		cfg.resources = slices.Clone(resources)
 	}
 }
 
@@ -103,6 +115,14 @@ func New(
 			opt(cfg)
 		}
 	}
+	for _, resource := range cfg.resources {
+		if strings.TrimSpace(resource) == "" {
+			return nil, nil, &oauth.Error{
+				Code:        oauth.ErrCodeInvalidRequest,
+				Description: "OAuth resources must not be blank",
+			}
+		}
+	}
 
 	// 1. Create a shared HTTP client for both discovery and OAuth
 	httpClient, err := oauth.NewDefaultHTTPClient()
@@ -128,7 +148,11 @@ func New(
 
 	// 4. Set up token store and source
 	store := credstore.DefaultTokenSecureStore(cfg.serviceName, cfg.storePath)
-	ts := authflow.NewTokenSource(client, authflow.WithStore(store))
+	ts := authflow.NewTokenSource(
+		client,
+		authflow.WithStore(store),
+		authflow.WithTokenResources(cfg.resources...),
+	)
 
 	// 5. Return a cached/refreshed token if available. Only ErrReauthRequired
 	// drops through to the interactive flow; other errors (transient store
@@ -151,9 +175,15 @@ func New(
 	if useBrowser {
 		token, err = authflow.RunAuthCodeFlow(ctx, client, cfg.scopes,
 			authflow.WithLocalPort(cfg.localPort),
+			authflow.WithResources(cfg.resources...),
 		)
 	} else {
-		token, err = authflow.RunDeviceFlow(ctx, client, cfg.scopes)
+		token, err = authflow.RunDeviceFlow(
+			ctx,
+			client,
+			cfg.scopes,
+			authflow.WithResources(cfg.resources...),
+		)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("signet: authenticate: %w", err)

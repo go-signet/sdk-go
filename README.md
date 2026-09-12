@@ -20,7 +20,7 @@ go get github.com/go-signet/sdk-go
 | Package                     | Description                                                                                                      |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | [credstore](credstore/)     | Secure credential storage with OS keyring integration and file-based fallback                                    |
-| [oauth](oauth/)             | OAuth 2.0 token client (Device Code, Auth Code, Client Credentials, Refresh, Revoke, Introspect, UserInfo)       |
+| [oauth](oauth/)             | OAuth 2.0 token client (resource indicators, OBO, Device/Auth Code, Client Credentials, Refresh, Introspect)    |
 | [discovery](discovery/)     | OIDC auto-discovery from `/.well-known/openid-configuration` with caching                                        |
 | [authflow](authflow/)       | CLI flow orchestration (Device Code polling, Auth Code + PKCE, auto-refresh TokenSource with persistent storage) |
 | [middleware](middleware/)   | `net/http` Bearer token validation middleware (online: tokeninfo / introspection per request)                    |
@@ -66,6 +66,19 @@ jwksauth — standalone (wraps coreos/go-oidc)      |
 Reach for `bearerauth` when one route must accept both credential kinds, or
 when you need a verifier that plugs into a non-`net/http` router (gin, echo,
 fiber, connect) without the SDK writing responses for you.
+
+### Resource indicators and OBO
+
+All token grants accept RFC 8707 resource indicators. Interactive flows and the
+root `signet.New` facade use `WithResources`; the client-credentials token
+source has its own option of the same name. API A performs Signet's single-hop
+OBO exchange through `oauth.Client.ExchangeOnBehalfOf`.
+
+API B should validate delegated JWTs locally with `jwksauth` or `bearerauth` so
+it can enforce the signed audience, user subject, scopes, and `act` actor. Under
+Signet's default ownership gate, introspection by API B returns an active-only
+verdict; use that verdict only as an optional live revocation/lineage check,
+not as identity metadata.
 
 ## Development
 

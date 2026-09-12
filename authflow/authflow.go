@@ -2,12 +2,14 @@
 //
 // It handles Device Code polling, Authorization Code + PKCE with a local
 // callback server and browser opening, and automatic token refresh with
-// persistent storage via credstore.
+// persistent storage via credstore. Both interactive flows support RFC 8707
+// resource indicators.
 package authflow
 
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -17,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -69,24 +72,26 @@ func (h DefaultDeviceFlowHandler) DisplayCode(auth *oauth.DeviceAuth) error {
 	return nil
 }
 
-// DeviceFlowOption configures RunDeviceFlow.
-type DeviceFlowOption func(*deviceFlowConfig)
+// FlowOption configures an interactive Device Code or Authorization Code flow.
+type FlowOption func(*flowConfig)
 
-type deviceFlowConfig struct {
+type flowConfig struct {
 	handler     DeviceFlowHandler
 	openBrowser bool
+	localPort   int // 0 means pick a random free port
+	resources   []string
 }
 
 // WithDeviceFlowHandler sets a custom handler for displaying the device code.
-func WithDeviceFlowHandler(h DeviceFlowHandler) DeviceFlowOption {
-	return func(cfg *deviceFlowConfig) {
+func WithDeviceFlowHandler(h DeviceFlowHandler) FlowOption {
+	return func(cfg *flowConfig) {
 		cfg.handler = h
 	}
 }
 
 // WithOpenBrowser controls whether to automatically open the verification URI.
-func WithOpenBrowser(open bool) DeviceFlowOption {
-	return func(cfg *deviceFlowConfig) {
+func WithOpenBrowser(open bool) FlowOption {
+	return func(cfg *flowConfig) {
 		cfg.openBrowser = open
 	}
 }
@@ -97,9 +102,9 @@ func RunDeviceFlow(
 	ctx context.Context,
 	client *oauth.Client,
 	scopes []string,
-	opts ...DeviceFlowOption,
+	opts ...FlowOption,
 ) (*oauth.Token, error) {
-	cfg := &deviceFlowConfig{
+	cfg := &flowConfig{
 		handler: DefaultDeviceFlowHandler{},
 	}
 	for _, opt := range opts {
@@ -107,8 +112,13 @@ func RunDeviceFlow(
 			opt(cfg)
 		}
 	}
+	var err error
+	cfg.resources, err = validateResources(cfg.resources)
+	if err != nil {
+		return nil, err
+	}
 
-	auth, err := client.RequestDeviceCode(ctx, scopes)
+	auth, err := client.RequestDeviceCode(ctx, scopes, cfg.resources)
 	if err != nil {
 		return nil, fmt.Errorf("authflow: request device code: %w", err)
 	}
@@ -125,7 +135,7 @@ func RunDeviceFlow(
 		_ = openBrowser(uri)
 	}
 
-	return pollDeviceCode(ctx, client, auth)
+	return pollDeviceCode(ctx, client, auth, cfg.resources)
 }
 
 // pollDeviceCode polls the token endpoint until the user authorizes or the code expires.
@@ -133,6 +143,7 @@ func pollDeviceCode(
 	ctx context.Context,
 	client *oauth.Client,
 	auth *oauth.DeviceAuth,
+	resources []string,
 ) (*oauth.Token, error) {
 	interval := time.Duration(auth.Interval) * time.Second
 	if interval < 1*time.Second {
@@ -162,7 +173,7 @@ func pollDeviceCode(
 			return nil, errors.New("authflow: device code expired")
 		}
 
-		token, err := client.ExchangeDeviceCode(ctx, auth.DeviceCode)
+		token, err := client.ExchangeDeviceCode(ctx, auth.DeviceCode, resources)
 		if err != nil {
 			var oauthErr *oauth.Error
 			if errors.As(err, &oauthErr) {
@@ -196,18 +207,41 @@ func generateState() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// AuthCodeFlowOption configures RunAuthCodeFlow.
-type AuthCodeFlowOption func(*authCodeFlowConfig)
-
-type authCodeFlowConfig struct {
-	localPort int // 0 means pick a random free port
-}
-
 // WithLocalPort sets the local port for the callback server.
 // By default a random free port is used.
-func WithLocalPort(port int) AuthCodeFlowOption {
-	return func(cfg *authCodeFlowConfig) {
+func WithLocalPort(port int) FlowOption {
+	return func(cfg *flowConfig) {
 		cfg.localPort = port
+	}
+}
+
+// WithResources sets the RFC 8707 resource indicators used throughout an
+// interactive flow. The values are copied before the option returns.
+func WithResources(resources ...string) FlowOption {
+	resources = slices.Clone(resources)
+	return func(cfg *flowConfig) {
+		cfg.resources = slices.Clone(resources)
+	}
+}
+
+func validateResources(resources []string) ([]string, error) {
+	validated := make([]string, len(resources))
+	for i, resource := range resources {
+		resource = strings.TrimSpace(resource)
+		if resource == "" {
+			return nil, &oauth.Error{
+				Code:        oauth.ErrCodeInvalidRequest,
+				Description: "OAuth resources must not be blank",
+			}
+		}
+		validated[i] = resource
+	}
+	return validated, nil
+}
+
+func addResources(values url.Values, resources []string) {
+	for _, resource := range resources {
+		values.Add("resource", resource)
 	}
 }
 
@@ -217,13 +251,18 @@ func RunAuthCodeFlow(
 	ctx context.Context,
 	client *oauth.Client,
 	scopes []string,
-	opts ...AuthCodeFlowOption,
+	opts ...FlowOption,
 ) (*oauth.Token, error) {
-	cfg := &authCodeFlowConfig{}
+	cfg := &flowConfig{}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(cfg)
 		}
+	}
+	var err error
+	cfg.resources, err = validateResources(cfg.resources)
+	if err != nil {
+		return nil, err
 	}
 	pkce, err := NewPKCE()
 	if err != nil {
@@ -313,6 +352,7 @@ func RunAuthCodeFlow(
 		"code_challenge":        {pkce.Challenge},
 		"code_challenge_method": {pkce.Method},
 	}
+	addResources(params, cfg.resources)
 	authURL := endpoints.AuthorizeURL + "?" + params.Encode()
 
 	if err := openBrowser(authURL); err != nil {
@@ -343,7 +383,13 @@ func RunAuthCodeFlow(
 
 	shutdown()
 
-	token, err := client.ExchangeAuthCode(ctx, code, redirectURI, pkce.Verifier)
+	token, err := client.ExchangeAuthCode(
+		ctx,
+		code,
+		redirectURI,
+		pkce.Verifier,
+		cfg.resources,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("authflow: exchange auth code: %w", err)
 	}
@@ -360,15 +406,39 @@ func WithStore(store credstore.Store[credstore.Token]) TokenSourceOption {
 	}
 }
 
+// WithTokenResources sets the RFC 8707 resources used for refresh requests and
+// isolates stored tokens issued for different audience sets.
+func WithTokenResources(resources ...string) TokenSourceOption {
+	resources = slices.Clone(resources)
+	return func(ts *TokenSource) {
+		ts.resources = slices.Clone(resources)
+	}
+}
+
 // TokenSource provides automatic token refresh with optional persistent storage.
 // Concurrent Token() callers share a single in-flight refresh via singleflight;
 // mu additionally serializes store I/O so external SaveToken writes that race
 // with an in-flight refresh are not silently overwritten — see loadOrRefresh.
 type TokenSource struct {
-	client *oauth.Client
-	store  credstore.Store[credstore.Token]
-	mu     sync.Mutex
-	group  singleflight.Group
+	client    *oauth.Client
+	store     credstore.Store[credstore.Token]
+	resources []string
+	mu        sync.Mutex
+	group     singleflight.Group
+}
+
+func (ts *TokenSource) storeKey() string {
+	if len(ts.resources) == 0 {
+		return ts.client.ClientID()
+	}
+	canonical := make([]string, len(ts.resources))
+	for i, resource := range ts.resources {
+		canonical[i] = strings.TrimSpace(resource)
+	}
+	slices.Sort(canonical)
+	canonical = slices.Compact(canonical)
+	digest := sha256.Sum256([]byte(strings.Join(canonical, "\x00")))
+	return ts.client.ClientID() + ":resource:" + hex.EncodeToString(digest[:])
 }
 
 // NewTokenSource creates a new TokenSource that automatically refreshes tokens.
@@ -392,9 +462,12 @@ func NewTokenSource(client *oauth.Client, opts ...TokenSourceOption) *TokenSourc
 // refreshes are coalesced via singleflight and selected against ctx.Done so
 // each caller can honor its own cancellation while the inner refresh runs.
 func (ts *TokenSource) Token(ctx context.Context) (*oauth.Token, error) {
+	if _, err := validateResources(ts.resources); err != nil {
+		return nil, err
+	}
 	if ts.store != nil {
 		ts.mu.Lock()
-		stored, err := ts.store.Load(ts.client.ClientID())
+		stored, err := ts.store.Load(ts.storeKey())
 		ts.mu.Unlock()
 		if err == nil && stored.IsValid() {
 			return credstoreToOAuth(&stored), nil
@@ -438,7 +511,7 @@ func (ts *TokenSource) loadOrRefresh(ctx context.Context) (*oauth.Token, error) 
 	}
 
 	ts.mu.Lock()
-	stored, err := ts.store.Load(ts.client.ClientID())
+	stored, err := ts.store.Load(ts.storeKey())
 	ts.mu.Unlock()
 	if err != nil {
 		if errors.Is(err, credstore.ErrNotFound) {
@@ -455,7 +528,7 @@ func (ts *TokenSource) loadOrRefresh(ctx context.Context) (*oauth.Token, error) 
 		return nil, ErrReauthRequired
 	}
 
-	refreshed, err := ts.client.RefreshToken(ctx, stored.RefreshToken)
+	refreshed, err := ts.client.RefreshToken(ctx, stored.RefreshToken, ts.resources)
 	if err != nil {
 		// invalid_grant / invalid_token mean the refresh token is no longer
 		// usable (revoked or expired). Surface as ErrReauthRequired so callers
@@ -490,7 +563,7 @@ func (ts *TokenSource) loadOrRefresh(ctx context.Context) (*oauth.Token, error) 
 	// the external write and return it instead of overwriting it. If the
 	// concurrent write produced an invalid/expired token, fall through and
 	// save our freshly refreshed result.
-	current, currentErr := ts.store.Load(ts.client.ClientID())
+	current, currentErr := ts.store.Load(ts.storeKey())
 	if currentErr == nil && current.IsValid() &&
 		(current.AccessToken != stored.AccessToken ||
 			current.RefreshToken != stored.RefreshToken ||
@@ -506,6 +579,9 @@ func (ts *TokenSource) loadOrRefresh(ctx context.Context) (*oauth.Token, error) 
 
 // SaveToken persists a token to the store (if configured).
 func (ts *TokenSource) SaveToken(token *oauth.Token) error {
+	if _, err := validateResources(ts.resources); err != nil {
+		return err
+	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	return ts.saveToken(token)
@@ -516,7 +592,7 @@ func (ts *TokenSource) saveToken(token *oauth.Token) error {
 	if ts.store == nil {
 		return nil
 	}
-	return ts.store.Save(ts.client.ClientID(), oauthToCredstore(token, ts.client.ClientID()))
+	return ts.store.Save(ts.storeKey(), oauthToCredstore(token, ts.client.ClientID()))
 }
 
 func credstoreToOAuth(t *credstore.Token) *oauth.Token {

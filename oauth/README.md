@@ -27,13 +27,14 @@ if err != nil {
 ### Device Code Flow
 
 ```go
-auth, err := client.RequestDeviceCode(ctx, []string{"read", "write"})
+resources := []string{"https://api.example.com"}
+auth, err := client.RequestDeviceCode(ctx, []string{"read", "write"}, resources)
 if err != nil {
     log.Fatal(err)
 }
 fmt.Printf("Open %s and enter code: %s\n", auth.VerificationURI, auth.UserCode)
 
-token, err := client.ExchangeDeviceCode(ctx, auth.DeviceCode)
+token, err := client.ExchangeDeviceCode(ctx, auth.DeviceCode, resources)
 if err != nil {
     log.Fatal(err)
 }
@@ -42,7 +43,10 @@ if err != nil {
 ### Authorization Code + PKCE
 
 ```go
-token, err := client.ExchangeAuthCode(ctx, code, redirectURI, codeVerifier)
+token, err := client.ExchangeAuthCode(
+    ctx, code, redirectURI, codeVerifier,
+    []string{"https://api.example.com"},
+)
 if err != nil {
     log.Fatal(err)
 }
@@ -55,11 +59,35 @@ client, err := oauth.NewClient("client-id", endpoints, oauth.WithClientSecret("s
 if err != nil {
     log.Fatal(err)
 }
-token, err := client.ClientCredentials(ctx, []string{"read"})
+token, err := client.ClientCredentials(
+    ctx,
+    []string{"read"},
+    []string{"https://api.example.com"},
+)
 if err != nil {
     log.Fatal(err)
 }
 ```
+
+### On-Behalf-Of
+
+API A can exchange a Signet user access token whose audience is API A for a
+short-lived token whose sole audience is API B:
+
+```go
+client, err := oauth.NewClient("api-a", endpoints,
+    oauth.WithClientSecret(os.Getenv("API_A_CLIENT_SECRET")),
+)
+token, err := client.ExchangeOnBehalfOf(ctx, oauth.OnBehalfOfRequest{
+    Assertion: sourceToken,
+    Resource:  "https://api-b.example.com",
+    Scopes:    []string{"orders.read"},
+})
+```
+
+The assertion must be a Signet user access token with exactly one audience.
+The server remains authoritative for client credentials, policy, consent,
+lineage, scope mapping, and the five-minute maximum lifetime.
 
 ### Personal API Keys (`sgk_…`)
 
@@ -89,7 +117,10 @@ use [`bearerauth/`](../bearerauth/) rather than calling this directly.
 ### Refresh / Revoke / Introspect / UserInfo
 
 ```go
-token, err := client.RefreshToken(ctx, refreshToken)
+token, err := client.RefreshToken(
+    ctx, refreshToken,
+    []string{"https://api.example.com"},
+)
 if err != nil {
     log.Fatal(err)
 }
@@ -127,7 +158,10 @@ from following untrusted redirects.
 
 - `Token` — access_token, refresh_token, token_type, expires_in, scope, id_token
 - `DeviceAuth` — device_code, user_code, verification_uri, interval
-- `IntrospectionResult` — active, scope, client_id, username, exp, etc.
+- `OnBehalfOfRequest` — source assertion, one target resource, and scopes
+- `Audience` — canonical decoding for string or string-array `aud` values
+- `Actor` — the client acting on behalf of the user (`act.sub`)
+- `IntrospectionResult` — active, scope, client_id, audience, actor, exp, etc.
 - `UserInfo` — sub, name, email, preferred_username, etc.
 - `TokenInfo` — active, user_id, client_id, scope, subject_type
 - `PersonalAPIKeyTokenInfo` — the above plus `token_type`, for `sgk_…` keys

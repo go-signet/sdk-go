@@ -1,14 +1,16 @@
 // Package oauth provides an OAuth 2.0 token client for Signet.
 //
 // It encapsulates all HTTP request/response logic for Device Code,
-// Authorization Code + PKCE, Client Credentials, Refresh, Revoke,
-// Introspect, and UserInfo flows. This is a pure HTTP client layer
+// Authorization Code + PKCE, Client Credentials, Refresh, OBO, Revoke,
+// Introspect, and UserInfo flows with RFC 8707 resources. This is a pure HTTP client layer
 // that does not handle storage, polling, or UI interactions.
 package oauth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -63,7 +65,12 @@ const (
 	GrantTypeRefreshToken = "refresh_token"
 	// GrantTypeDeviceCode is the Device Authorization grant (RFC 8628 §3.4).
 	GrantTypeDeviceCode = "urn:ietf:params:oauth:grant-type:device_code"
+	// GrantTypeJWTBearer is Signet's grant type for a single-hop OBO exchange.
+	GrantTypeJWTBearer = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 )
+
+// RequestedTokenUseOnBehalfOf selects Signet's single-hop OBO exchange.
+const RequestedTokenUseOnBehalfOf = "on_behalf_of"
 
 // PKCEMethodS256 is the SHA-256 PKCE code-challenge method (RFC 7636 §4.3).
 const PKCEMethodS256 = "S256"
@@ -90,6 +97,16 @@ const (
 	// also reuses it for local precondition failures such as an endpoint that has
 	// not been configured.
 	ErrCodeInvalidRequest = "invalid_request"
+	// ErrCodeInvalidClient indicates failed confidential-client authentication.
+	ErrCodeInvalidClient = "invalid_client"
+	// ErrCodeUnauthorizedClient indicates the client may not use the requested grant.
+	ErrCodeUnauthorizedClient = "unauthorized_client"
+	// ErrCodeInvalidScope indicates the requested scope is not permitted.
+	ErrCodeInvalidScope = "invalid_scope"
+	// ErrCodeInvalidTarget indicates the requested resource is not permitted.
+	ErrCodeInvalidTarget = "invalid_target"
+	// ErrCodeUnsupportedGrantType indicates the grant type is not enabled or supported.
+	ErrCodeUnsupportedGrantType = "unsupported_grant_type"
 	// ErrCodeInvalidState is an SDK-defined (non-standard) code signalling that an
 	// authorization-callback state parameter did not match the expected value
 	// (CSRF protection). It is not defined by the OAuth RFCs.
@@ -133,18 +150,62 @@ type DeviceAuth struct {
 	Interval                int    `json:"interval"`
 }
 
+// Audience is the canonical string-slice representation of an OAuth aud value.
+// OAuth responses may encode a single audience as a string or multiple audiences
+// as an array; both forms decode into this type.
+type Audience []string
+
+// UnmarshalJSON accepts the JWT/OAuth string-or-string-array audience forms.
+func (a *Audience) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		return errors.New("oauth: decode audience: empty JSON value")
+	}
+
+	var values []string
+	if data[0] == '"' {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return fmt.Errorf("oauth: decode audience: %w", err)
+		}
+		values = []string{value}
+	} else {
+		if err := json.Unmarshal(data, &values); err != nil {
+			return fmt.Errorf("oauth: decode audience: %w", err)
+		}
+	}
+	if len(values) == 0 {
+		return errors.New("oauth: decode audience: values must not be empty")
+	}
+
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return errors.New("oauth: decode audience: values must not be blank")
+		}
+	}
+	*a = values
+	return nil
+}
+
+// Actor identifies the client acting on behalf of the token subject.
+type Actor struct {
+	Subject string `json:"sub"`
+}
+
 // IntrospectionResult represents a token introspection response (RFC 7662 §2.2).
 type IntrospectionResult struct {
-	Active    bool   `json:"active"`
-	Scope     string `json:"scope,omitempty"`
-	ClientID  string `json:"client_id,omitempty"`
-	Username  string `json:"username,omitempty"`
-	TokenType string `json:"token_type,omitempty"`
-	Exp       int64  `json:"exp,omitempty"`
-	Iat       int64  `json:"iat,omitempty"`
-	Sub       string `json:"sub,omitempty"`
-	Iss       string `json:"iss,omitempty"`
-	Jti       string `json:"jti,omitempty"`
+	Active    bool     `json:"active"`
+	Scope     string   `json:"scope,omitempty"`
+	ClientID  string   `json:"client_id,omitempty"`
+	Username  string   `json:"username,omitempty"`
+	TokenType string   `json:"token_type,omitempty"`
+	Exp       int64    `json:"exp,omitempty"`
+	Iat       int64    `json:"iat,omitempty"`
+	Sub       string   `json:"sub,omitempty"`
+	Iss       string   `json:"iss,omitempty"`
+	Jti       string   `json:"jti,omitempty"`
+	Audience  Audience `json:"aud,omitempty"`
+	Actor     *Actor   `json:"act,omitempty"`
 }
 
 // UserInfo represents the OIDC UserInfo response (OIDC Core 1.0 §5.3).
@@ -162,13 +223,21 @@ type UserInfo struct {
 
 // TokenInfo represents the tokeninfo response from Signet.
 type TokenInfo struct {
-	Active      bool   `json:"active"`
-	UserID      string `json:"user_id"`
-	ClientID    string `json:"client_id"`
-	Scope       string `json:"scope"`
-	Exp         int64  `json:"exp"`
-	Iss         string `json:"iss"`
-	SubjectType string `json:"subject_type"`
+	Active      bool     `json:"active"`
+	UserID      string   `json:"user_id"`
+	ClientID    string   `json:"client_id"`
+	Scope       string   `json:"scope"`
+	Exp         int64    `json:"exp"`
+	Iss         string   `json:"iss"`
+	SubjectType string   `json:"subject_type"`
+	Audience    Audience `json:"aud,omitempty"`
+}
+
+// OnBehalfOfRequest contains the source user token and requested downstream grant.
+type OnBehalfOfRequest struct {
+	Assertion string
+	Resource  string
+	Scopes    []string
 }
 
 // PersonalAPIKeyTokenInfo represents the tokeninfo response Signet returns for
@@ -376,7 +445,10 @@ func requireEndpoint(endpoint, name string) *Error {
 }
 
 // RequestDeviceCode initiates a device authorization request (RFC 8628 §3.1).
-func (c *Client) RequestDeviceCode(ctx context.Context, scopes []string) (*DeviceAuth, error) {
+func (c *Client) RequestDeviceCode(
+	ctx context.Context,
+	scopes, resources []string,
+) (*DeviceAuth, error) {
 	if err := requireEndpoint(
 		c.endpoints.DeviceAuthorizationURL,
 		"device authorization",
@@ -389,6 +461,9 @@ func (c *Client) RequestDeviceCode(ctx context.Context, scopes []string) (*Devic
 	if len(scopes) > 0 {
 		data.Set("scope", strings.Join(scopes, " "))
 	}
+	if err := addResources(data, resources); err != nil {
+		return nil, err
+	}
 
 	var auth DeviceAuth
 	if err := c.postForm(ctx, c.endpoints.DeviceAuthorizationURL, data, &auth); err != nil {
@@ -398,10 +473,17 @@ func (c *Client) RequestDeviceCode(ctx context.Context, scopes []string) (*Devic
 }
 
 // ExchangeDeviceCode exchanges a device code for tokens (RFC 8628 §3.4).
-func (c *Client) ExchangeDeviceCode(ctx context.Context, deviceCode string) (*Token, error) {
+func (c *Client) ExchangeDeviceCode(
+	ctx context.Context,
+	deviceCode string,
+	resources []string,
+) (*Token, error) {
 	data := url.Values{
 		"grant_type":  {GrantTypeDeviceCode},
 		"device_code": {deviceCode},
+	}
+	if err := addResources(data, resources); err != nil {
+		return nil, err
 	}
 
 	return c.tokenRequest(ctx, data)
@@ -411,6 +493,7 @@ func (c *Client) ExchangeDeviceCode(ctx context.Context, deviceCode string) (*To
 func (c *Client) ExchangeAuthCode(
 	ctx context.Context,
 	code, redirectURI, codeVerifier string,
+	resources []string,
 ) (*Token, error) {
 	data := url.Values{
 		"grant_type":   {GrantTypeAuthorizationCode},
@@ -421,30 +504,98 @@ func (c *Client) ExchangeAuthCode(
 	if codeVerifier != "" {
 		data.Set("code_verifier", codeVerifier)
 	}
+	if err := addResources(data, resources); err != nil {
+		return nil, err
+	}
 
 	return c.tokenRequest(ctx, data)
 }
 
 // ClientCredentials requests a token using client credentials (RFC 6749 §4.4).
-func (c *Client) ClientCredentials(ctx context.Context, scopes []string) (*Token, error) {
+func (c *Client) ClientCredentials(
+	ctx context.Context,
+	scopes, resources []string,
+) (*Token, error) {
 	data := url.Values{
 		"grant_type": {GrantTypeClientCredentials},
 	}
 	if len(scopes) > 0 {
 		data.Set("scope", strings.Join(scopes, " "))
 	}
+	if err := addResources(data, resources); err != nil {
+		return nil, err
+	}
 
 	return c.tokenRequest(ctx, data)
 }
 
+// ExchangeOnBehalfOf exchanges a Signet user access token addressed to the
+// calling API for a short-lived token addressed to one downstream resource.
+func (c *Client) ExchangeOnBehalfOf(
+	ctx context.Context,
+	req OnBehalfOfRequest,
+) (*Token, error) {
+	resource := strings.TrimSpace(req.Resource)
+	scopes := strings.Fields(strings.Join(req.Scopes, " "))
+	switch {
+	case strings.TrimSpace(req.Assertion) == "":
+		return nil, &Error{
+			Code:        ErrCodeInvalidRequest,
+			Description: "OBO assertion is required",
+		}
+	case resource == "":
+		return nil, &Error{
+			Code:        ErrCodeInvalidRequest,
+			Description: "OBO resource is required",
+		}
+	case len(scopes) == 0:
+		return nil, &Error{
+			Code:        ErrCodeInvalidRequest,
+			Description: "at least one OBO scope is required",
+		}
+	}
+
+	data := url.Values{
+		"grant_type":          {GrantTypeJWTBearer},
+		"requested_token_use": {RequestedTokenUseOnBehalfOf},
+		"assertion":           {req.Assertion},
+		"resource":            {resource},
+		"scope":               {strings.Join(scopes, " ")},
+	}
+	return c.tokenRequest(ctx, data)
+}
+
 // RefreshToken exchanges a refresh token for new tokens (RFC 6749 §6).
-func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*Token, error) {
+func (c *Client) RefreshToken(
+	ctx context.Context,
+	refreshToken string,
+	resources []string,
+) (*Token, error) {
 	data := url.Values{
 		"grant_type":    {GrantTypeRefreshToken},
 		"refresh_token": {refreshToken},
 	}
+	if err := addResources(data, resources); err != nil {
+		return nil, err
+	}
 
 	return c.tokenRequest(ctx, data)
+}
+
+// addResources adds repeatable RFC 8707 resource parameters after rejecting
+// blank values. An empty slice preserves the server's grant-specific default.
+func addResources(data url.Values, resources []string) error {
+	for _, resource := range resources {
+		resource = strings.TrimSpace(resource)
+		if resource == "" {
+			return &Error{
+				Code:        ErrCodeInvalidRequest,
+				Description: "OAuth resources must not be blank",
+			}
+		}
+		data.Add("resource", resource)
+	}
+	return nil
 }
 
 // Revoke revokes a token (RFC 7009).

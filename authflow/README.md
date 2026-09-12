@@ -14,6 +14,7 @@ import (
 
 token, _ := authflow.RunDeviceFlow(ctx, client, []string{"read", "write"},
     authflow.WithOpenBrowser(true),
+    authflow.WithResources("https://api.example.com"),
 )
 ```
 
@@ -22,7 +23,9 @@ token, _ := authflow.RunDeviceFlow(ctx, client, []string{"read", "write"},
 Starts a local callback server, opens the browser, and exchanges the code automatically:
 
 ```go
-token, _ := authflow.RunAuthCodeFlow(ctx, client, []string{"openid", "profile"})
+token, _ := authflow.RunAuthCodeFlow(ctx, client, []string{"openid", "profile"},
+    authflow.WithResources("https://api.example.com"),
+)
 ```
 
 ### Auto-refresh TokenSource
@@ -35,6 +38,7 @@ import "github.com/go-signet/sdk-go/credstore"
 store := credstore.DefaultTokenSecureStore("my-app", ".tokens.json")
 ts := authflow.NewTokenSource(client,
     authflow.WithStore(store),
+    authflow.WithTokenResources("https://api.example.com"),
 )
 
 token, _ := ts.Token(ctx) // auto-loads from cache, refreshes if expired
@@ -61,18 +65,21 @@ if authflow.CheckBrowserAvailability() {
 
 ## Options
 
-### RunDeviceFlow
+### Interactive flows
 
 | Option                    | Description                              |
 | ------------------------- | ---------------------------------------- |
 | `WithOpenBrowser(bool)`   | Automatically open verification URI      |
 | `WithDeviceFlowHandler()` | Custom handler for displaying user codes |
+| `WithLocalPort(int)`      | Local callback port for Auth Code + PKCE  |
+| `WithResources(...string)` | RFC 8707 resource indicators             |
 
 ### TokenSource
 
 | Option        | Description                         |
 | ------------- | ----------------------------------- |
-| `WithStore()` | Set credstore for token persistence |
+| `WithStore()`          | Set credstore for token persistence        |
+| `WithTokenResources()` | Resources for refresh and cache isolation  |
 
 ## Types
 
