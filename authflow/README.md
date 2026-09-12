@@ -1,5 +1,10 @@
 # authflow
 
+Token caches use a versioned key encoding both client ID and resource set,
+including when resources are omitted. Earlier client-ID-only and resource-key
+entries are not reused; users authenticate again once after upgrading. Old
+entries remain in the store and the stored token format is unchanged.
+
 High-level CLI authentication flow orchestration. Handles Device Code polling, Authorization Code + PKCE (with local callback server and browser opening), and automatic token refresh with persistent storage.
 
 ## Usage

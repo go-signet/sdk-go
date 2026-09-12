@@ -429,22 +429,24 @@ type TokenSource struct {
 }
 
 func (ts *TokenSource) storeKey() string {
-	if len(ts.resources) == 0 {
-		return ts.client.ClientID()
-	}
-	canonical := make([]string, len(ts.resources))
-	for i, resource := range ts.resources {
+	return tokenStoreKey(ts.client.ClientID(), ts.resources)
+}
+
+func tokenStoreKey(clientID string, resources []string) string {
+	canonical := make([]string, len(resources))
+	for i, resource := range resources {
 		canonical[i] = strings.TrimSpace(resource)
 	}
 	slices.Sort(canonical)
 	canonical = slices.Compact(canonical)
-	var encoded []byte
+	encoded := binary.AppendUvarint(nil, uint64(len(clientID)))
+	encoded = append(encoded, clientID...)
 	for _, resource := range canonical {
 		encoded = binary.AppendUvarint(encoded, uint64(len(resource)))
 		encoded = append(encoded, resource...)
 	}
 	digest := sha256.Sum256(encoded)
-	return ts.client.ClientID() + ":resource:" + hex.EncodeToString(digest[:])
+	return "signet:token:v1:" + hex.EncodeToString(digest[:])
 }
 
 // NewTokenSource creates a new TokenSource that automatically refreshes tokens.

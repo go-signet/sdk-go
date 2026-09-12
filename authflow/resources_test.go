@@ -92,7 +92,7 @@ func TestRunDeviceFlowSendsResourcesOnBothRequests(t *testing.T) {
 	}
 }
 
-func TestTokenSourceSeparatesResourceCachesAndRefreshesResource(t *testing.T) {
+func TestTokenSourceSeparatesResourceCaches(t *testing.T) {
 	store := newStubStore()
 	client, err := oauth.NewClient("client", oauth.Endpoints{TokenURL: "http://unused"})
 	if err != nil {
@@ -142,6 +142,72 @@ func TestTokenSourceResourceDelimiterDoesNotAliasCache(t *testing.T) {
 	}
 	if _, err := separate.Token(t.Context()); !errors.Is(err, ErrReauthRequired) {
 		t.Fatalf("separate resources error = %v, want ErrReauthRequired", err)
+	}
+}
+
+func TestTokenSourceClientIDDoesNotAliasResourceCache(t *testing.T) {
+	store := newStubStore()
+	client, err := oauth.NewClient("a", oauth.Endpoints{TokenURL: "http://unused"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scoped := NewTokenSource(
+		client,
+		WithStore(store),
+		WithTokenResources("https://api.example.com"),
+	)
+	otherClient, err := oauth.NewClient(
+		scoped.storeKey(),
+		oauth.Endpoints{TokenURL: "http://unused"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := NewTokenSource(otherClient, WithStore(store))
+	if err := scoped.SaveToken(&oauth.Token{
+		AccessToken: "client-a-token", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.Token(t.Context()); !errors.Is(err, ErrReauthRequired) {
+		t.Fatalf("other client error = %v, want ErrReauthRequired", err)
+	}
+}
+
+func TestTokenSourceRefreshSendsResources(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if err := r.ParseForm(); err != nil {
+			t.Error(err)
+		}
+		if r.PostForm.Get("grant_type") != oauth.GrantTypeRefreshToken ||
+			r.PostForm.Get("refresh_token") != "refresh-a" ||
+			!slices.Equal(r.PostForm["resource"], []string{"https://api-a.example.com"}) {
+			t.Errorf("unexpected refresh form: %v", r.PostForm)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"fresh-a","expires_in":3600,"token_type":"Bearer"}`))
+	}))
+	t.Cleanup(server.Close)
+	client, err := oauth.NewClient("a", oauth.Endpoints{TokenURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := NewTokenSource(client, WithStore(newStubStore()),
+		WithTokenResources("https://api-a.example.com"))
+	if err := source.SaveToken(&oauth.Token{
+		AccessToken: "expired-a", RefreshToken: "refresh-a",
+		ExpiresAt: time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	token, err := source.Token(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token.AccessToken != "fresh-a" || calls != 1 {
+		t.Fatalf("token = %q, refresh calls = %d", token.AccessToken, calls)
 	}
 }
 
