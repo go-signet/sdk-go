@@ -126,8 +126,7 @@ type errorResponse struct {
 }
 
 func defaultErrorHandler(w http.ResponseWriter, _ *http.Request, err error) {
-	var oauthErr *oauth.Error
-	if errors.As(err, &oauthErr) {
+	if oauthErr, ok := errors.AsType[*oauth.Error](err); ok {
 		switch oauthErr.Code {
 		case oauth.ErrCodeServerError:
 			writeJSON(w, http.StatusInternalServerError, errorResponse{

@@ -240,8 +240,7 @@ func TestUnavailablePreservesOnlyContextIdentity(t *testing.T) {
 			if strings.Contains(err.Error(), "sgk_secret") {
 				t.Errorf("error leaked the cause's message: %s", err)
 			}
-			var target hostileError
-			if errors.As(err, &target) {
+			if _, ok := errors.AsType[hostileError](err); ok {
 				t.Errorf("errors.As exposed the upstream error type through %v", err)
 			}
 			if tt.wantContext != nil && !errors.Is(err, tt.wantContext) {

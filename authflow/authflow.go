@@ -176,8 +176,7 @@ func pollDeviceCode(
 
 		token, err := client.ExchangeDeviceCode(ctx, auth.DeviceCode, resources)
 		if err != nil {
-			var oauthErr *oauth.Error
-			if errors.As(err, &oauthErr) {
+			if oauthErr, ok := errors.AsType[*oauth.Error](err); ok {
 				switch oauthErr.Code {
 				case oauth.ErrCodeAuthorizationPending:
 					timer.Reset(interval)
