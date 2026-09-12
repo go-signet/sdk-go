@@ -69,6 +69,23 @@ func profile(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
+### On-Behalf-Of tokens
+
+Signet delegated access tokens retain the user in `sub` and carry the acting
+confidential client in `act.sub`. After normal signature, issuer, audience, and
+time validation, read it from the verified claims:
+
+```go
+if actor := info.Claims.Actor; actor != nil {
+    fmt.Println(info.Subject, actor.Subject) // user ID, client:api-a
+}
+```
+
+`act` is accepted only in Signet's single-hop shape
+`{"sub":"client:<id>"}`. Malformed, nested, or extended actor objects fail
+closed. Both `act` and `may_act` are issuer-reserved and never appear in
+`Claims.Extras`.
+
 ## Server-attested private claims and the prefix
 
 Signet may emit up to four private claims on a token: **Domain**,

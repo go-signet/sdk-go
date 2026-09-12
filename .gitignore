@@ -35,3 +35,6 @@ bin
 
 # macOS
 .DS_Store
+
+# Local planning documents
+/plan.md

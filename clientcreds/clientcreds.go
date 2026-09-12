@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -35,6 +36,14 @@ func WithScopes(scopes ...string) Option {
 	}
 }
 
+// WithResources sets the RFC 8707 resource indicators requested for the token.
+func WithResources(resources ...string) Option {
+	resources = slices.Clone(resources)
+	return func(ts *TokenSource) {
+		ts.resources = slices.Clone(resources)
+	}
+}
+
 // WithExpiryDelta sets how early before expiry to refresh the token.
 func WithExpiryDelta(d time.Duration) Option {
 	return func(ts *TokenSource) {
@@ -46,6 +55,7 @@ func WithExpiryDelta(d time.Duration) Option {
 type TokenSource struct {
 	client      *oauth.Client
 	scopes      []string
+	resources   []string
 	expiryDelta time.Duration
 
 	mu    sync.RWMutex
@@ -105,7 +115,7 @@ func (ts *TokenSource) Token(ctx context.Context) (*oauth.Token, error) {
 		defer cancel()
 
 		// Network call happens outside any lock
-		token, fetchErr := ts.client.ClientCredentials(fetchCtx, ts.scopes)
+		token, fetchErr := ts.client.ClientCredentials(fetchCtx, ts.scopes, ts.resources)
 		if fetchErr != nil {
 			return nil, fmt.Errorf("clientcreds: fetch token: %w", fetchErr)
 		}

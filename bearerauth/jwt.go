@@ -37,7 +37,7 @@ func identityFromJWT(info *jwksauth.TokenInfo) (*Identity, error) {
 		return nil, invalidCredential(`jwt is not an access token (claim "type" must be "access")`)
 	}
 
-	return &Identity{
+	identity := &Identity{
 		Subject:        info.Subject,
 		SubjectType:    subjectTypeOf(info.Subject),
 		Issuer:         info.Issuer,
@@ -45,5 +45,9 @@ func identityFromJWT(info *jwksauth.TokenInfo) (*Identity, error) {
 		Scopes:         canonicalScopes(info.Scopes),
 		ExpiresAt:      info.Expiry,
 		CredentialType: CredentialJWT,
-	}, nil
+	}
+	if info.Claims.Actor != nil {
+		identity.Actor = &Actor{Subject: info.Claims.Actor.Subject}
+	}
+	return identity, nil
 }

@@ -31,14 +31,20 @@ func ExampleNewTokenSource() {
 		log.Fatal(err)
 	}
 	store := credstore.DefaultTokenSecureStore("my-app", path)
-	ts := authflow.NewTokenSource(client, authflow.WithStore(store))
+	const resource = "https://api.example.com"
+	ts := authflow.NewTokenSource(client,
+		authflow.WithStore(store),
+		authflow.WithTokenResources(resource),
+	)
 
 	// Token loads from the store and refreshes expired tokens automatically.
 	token, err := ts.Token(ctx)
 	if errors.Is(err, authflow.ErrReauthRequired) {
 		// No cached or refreshable token: run an interactive flow and
 		// persist the result for next time.
-		token, err = authflow.RunAuthCodeFlow(ctx, client, []string{"profile"})
+		token, err = authflow.RunAuthCodeFlow(ctx, client, []string{"profile"},
+			authflow.WithResources(resource),
+		)
 		if err == nil {
 			err = ts.SaveToken(token)
 		}
@@ -80,6 +86,7 @@ func ExampleRunAuthCodeFlow() {
 	token, err := authflow.RunAuthCodeFlow(context.Background(), client,
 		[]string{"openid", "profile"},
 		authflow.WithLocalPort(8088),
+		authflow.WithResources("https://api.example.com"),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -103,6 +110,7 @@ func ExampleRunDeviceFlow() {
 	// default handler; use WithDeviceFlowHandler to render them differently.
 	token, err := authflow.RunDeviceFlow(context.Background(), client,
 		[]string{"read", "write"},
+		authflow.WithResources("https://api.example.com"),
 	)
 	if err != nil {
 		log.Fatal(err)

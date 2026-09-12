@@ -111,10 +111,13 @@ same Client App the policy pins.
 | `Scopes`         | verified scopes                         | `strings.Fields(scope)` | `strings.Fields(scope)` |
 | `ExpiresAt`      | verified expiry                         | Unix `exp`              | Unix `exp`              |
 | `CredentialType` | `jwt`                                   | `personal_api_key`      | `personal_api_key`      |
+| `Actor`          | verified `act`, when delegated           | `nil`                   | `nil`                   |
 
 Scopes from all three paths are cloned, de-duplicated, and sorted, so
 semantically identical grants compare equal regardless of wire order. Nothing
 path-specific (raw claims, `username`, `jti`, audience) reaches `Identity`.
+For an OBO JWT, `Identity.Subject` remains the user and
+`Identity.Actor.Subject` is the acting `client:<id>`.
 
 A JWT must additionally carry the signed claim `type=access`. Signet refresh
 tokens share the issuer's signing keys and would otherwise satisfy signature,

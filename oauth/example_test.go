@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/go-signet/sdk-go/oauth"
 )
@@ -21,7 +22,33 @@ func Example() {
 		log.Fatal(err)
 	}
 
-	token, err := client.ClientCredentials(context.Background(), []string{"read", "write"})
+	token, err := client.ClientCredentials(
+		context.Background(),
+		[]string{"read", "write"},
+		[]string{"https://api.example.com"},
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(token.AccessToken)
+}
+
+// ExampleClient_ExchangeOnBehalfOf demonstrates API A exchanging a user token
+// for a short-lived token addressed to API B.
+func ExampleClient_ExchangeOnBehalfOf() {
+	client, err := oauth.NewClient("api-a", oauth.Endpoints{
+		TokenURL: "https://auth.example.com/oauth/token",
+	}, oauth.WithClientSecret(os.Getenv("API_A_CLIENT_SECRET")))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	token, err := client.ExchangeOnBehalfOf(context.Background(), oauth.OnBehalfOfRequest{
+		Assertion: "signet-user-access-token-for-api-a",
+		Resource:  "https://api-b.example.com",
+		Scopes:    []string{"orders.read"},
+	})
 	if err != nil {
 		log.Fatal(err)
 	}

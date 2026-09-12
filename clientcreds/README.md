@@ -9,6 +9,7 @@ import "github.com/go-signet/sdk-go/clientcreds"
 
 ts := clientcreds.NewTokenSource(oauthClient,
     clientcreds.WithScopes("read", "write"),
+    clientcreds.WithResources("https://api.internal"),
     clientcreds.WithExpiryDelta(30 * time.Second),
 )
 ```
@@ -44,6 +45,7 @@ client := &http.Client{
 | Option              | Description                                           |
 | ------------------- | ----------------------------------------------------- |
 | `WithScopes()`      | Set scopes to request                                 |
+| `WithResources()`   | Set RFC 8707 resource indicators                      |
 | `WithExpiryDelta()` | Refresh this long before actual expiry (default: 30s) |
 
 ## Behavior

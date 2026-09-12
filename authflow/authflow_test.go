@@ -357,7 +357,7 @@ func (s *stubStore) String() string { return "stub" }
 
 func TestTokenSource_LoadValid(t *testing.T) {
 	store := newStubStore()
-	store.data["test-client"] = credstore.Token{
+	store.data[tokenStoreKey("test-client", nil)] = credstore.Token{
 		AccessToken:  "cached-token",
 		RefreshToken: "cached-refresh",
 		TokenType:    "Bearer",
@@ -401,7 +401,7 @@ func TestTokenSource_LoadValid(t *testing.T) {
 
 func TestTokenSource_RefreshExpired(t *testing.T) {
 	store := newStubStore()
-	store.data["test-client"] = credstore.Token{
+	store.data[tokenStoreKey("test-client", nil)] = credstore.Token{
 		AccessToken:  "expired-token",
 		RefreshToken: "refresh-me",
 		TokenType:    "Bearer",
@@ -438,7 +438,7 @@ func TestTokenSource_RefreshExpired(t *testing.T) {
 	}
 
 	// Verify token was saved to store
-	saved, loadErr := store.Load("test-client")
+	saved, loadErr := store.Load(tokenStoreKey("test-client", nil))
 	if loadErr != nil {
 		t.Fatalf("Load after refresh: %v", loadErr)
 	}
@@ -483,7 +483,7 @@ func TestTokenSource_NoStore(t *testing.T) {
 
 func TestTokenSource_ExpiredNoRefreshToken(t *testing.T) {
 	store := newStubStore()
-	store.data["test-client"] = credstore.Token{
+	store.data[tokenStoreKey("test-client", nil)] = credstore.Token{
 		AccessToken: "expired-token",
 		// no refresh token
 		TokenType: "Bearer",
@@ -508,7 +508,7 @@ func TestTokenSource_ExpiredNoRefreshToken(t *testing.T) {
 
 func TestTokenSource_RefreshInvalidGrant(t *testing.T) {
 	store := newStubStore()
-	store.data["test-client"] = credstore.Token{
+	store.data[tokenStoreKey("test-client", nil)] = credstore.Token{
 		AccessToken:  "expired-token",
 		RefreshToken: "revoked-refresh",
 		TokenType:    "Bearer",
@@ -568,7 +568,7 @@ func TestTokenSource_LoadError(t *testing.T) {
 
 func TestTokenSource_SaveError(t *testing.T) {
 	store := newStubStore()
-	store.data["test-client"] = credstore.Token{
+	store.data[tokenStoreKey("test-client", nil)] = credstore.Token{
 		AccessToken:  "expired-token",
 		RefreshToken: "refresh-me",
 		TokenType:    "Bearer",
@@ -630,7 +630,7 @@ func TestTokenSource_SaveToken(t *testing.T) {
 		t.Fatalf("SaveToken: %v", saveErr)
 	}
 
-	saved, loadErr := store.Load("test-client")
+	saved, loadErr := store.Load(tokenStoreKey("test-client", nil))
 	if loadErr != nil {
 		t.Fatalf("Load: %v", loadErr)
 	}
@@ -654,7 +654,7 @@ func TestTokenSource_SaveToken(t *testing.T) {
 // write and not overwrite it with the refresh result.
 func TestTokenSource_RefreshDoesNotOverwriteConcurrentSave(t *testing.T) {
 	store := newStubStore()
-	store.data["test-client"] = credstore.Token{
+	store.data[tokenStoreKey("test-client", nil)] = credstore.Token{
 		AccessToken:  "expired-token",
 		RefreshToken: "stale-refresh",
 		TokenType:    "Bearer",
@@ -723,7 +723,7 @@ func TestTokenSource_RefreshDoesNotOverwriteConcurrentSave(t *testing.T) {
 			res.tok.AccessToken, "external-saved")
 	}
 
-	saved, loadErr := store.Load("test-client")
+	saved, loadErr := store.Load(tokenStoreKey("test-client", nil))
 	if loadErr != nil {
 		t.Fatalf("Load: %v", loadErr)
 	}
@@ -748,7 +748,7 @@ func TestCheckBrowserAvailability(t *testing.T) {
 // the granted scope.
 func TestTokenSource_RefreshPreservesOmittedFields(t *testing.T) {
 	store := newStubStore()
-	store.data["test-client"] = credstore.Token{
+	store.data[tokenStoreKey("test-client", nil)] = credstore.Token{
 		AccessToken:  "expired",
 		RefreshToken: "keep-me",
 		Scope:        "openid profile",
@@ -788,7 +788,7 @@ func TestTokenSource_RefreshPreservesOmittedFields(t *testing.T) {
 		t.Errorf("Scope = %q, want %q (carried forward)", tok.Scope, "openid profile")
 	}
 
-	saved, err := store.Load("test-client")
+	saved, err := store.Load(tokenStoreKey("test-client", nil))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
