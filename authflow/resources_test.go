@@ -126,6 +126,25 @@ func TestTokenSourceSeparatesResourceCachesAndRefreshesResource(t *testing.T) {
 	}
 }
 
+func TestTokenSourceResourceDelimiterDoesNotAliasCache(t *testing.T) {
+	store := newStubStore()
+	client, err := oauth.NewClient("client", oauth.Endpoints{TokenURL: "http://unused"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := NewTokenSource(client, WithStore(store), WithTokenResources("a\x00b"))
+	separate := NewTokenSource(client, WithStore(store), WithTokenResources("a", "b"))
+	if err := joined.SaveToken(&oauth.Token{
+		AccessToken: "wrong-audience-token",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := separate.Token(t.Context()); !errors.Is(err, ErrReauthRequired) {
+		t.Fatalf("separate resources error = %v, want ErrReauthRequired", err)
+	}
+}
+
 func TestInvalidFlowResourceFailsBeforeNetwork(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("invalid resource must fail before network I/O")

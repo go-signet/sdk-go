@@ -80,6 +80,19 @@ Signet's default ownership gate, introspection by API B returns an active-only
 verdict; use that verdict only as an optional live revocation/lineage check,
 not as identity metadata.
 
+### Migrating to resource-aware APIs
+
+This update intentionally breaks source compatibility. Add the final
+`resources []string` argument to OAuth grant calls (`nil` omits resources), and
+replace `authflow.DeviceFlowOption` / `authflow.AuthCodeFlowOption` with
+`authflow.FlowOption`. Match `WithTokenResources` to interactive-flow resources.
+
+New fields also change the positional shapes of `oauth.TokenInfo`,
+`oauth.IntrospectionResult`, `jwksauth.Claims`, and `bearerauth.Identity`.
+Replace unkeyed composite literals with keyed literals, such as
+`oauth.TokenInfo{Active: true}` and `oauth.IntrospectionResult{Active: true}`;
+existing keyed literals may omit the new fields.
+
 ## Development
 
 ```bash

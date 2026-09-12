@@ -156,6 +156,12 @@ from following untrusted redirects.
 
 ## Types
 
+Migration: adding `Audience` to `TokenInfo` and `Audience` / `Actor` to
+`IntrospectionResult` breaks downstream unkeyed composite literals. Use keyed
+literals such as `TokenInfo{Active: true}` and `IntrospectionResult{Active: true}`
+instead. This is an intentional breaking change alongside the new resource
+arguments on grant methods.
+
 - `Token` — access_token, refresh_token, token_type, expires_in, scope, id_token
 - `DeviceAuth` — device_code, user_code, verification_uri, interval
 - `OnBehalfOfRequest` — source assertion, one target resource, and scopes

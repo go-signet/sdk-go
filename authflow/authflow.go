@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -437,7 +438,12 @@ func (ts *TokenSource) storeKey() string {
 	}
 	slices.Sort(canonical)
 	canonical = slices.Compact(canonical)
-	digest := sha256.Sum256([]byte(strings.Join(canonical, "\x00")))
+	var encoded []byte
+	for _, resource := range canonical {
+		encoded = binary.AppendUvarint(encoded, uint64(len(resource)))
+		encoded = append(encoded, resource...)
+	}
+	digest := sha256.Sum256(encoded)
 	return ts.client.ClientID() + ":resource:" + hex.EncodeToString(digest[:])
 }
 
