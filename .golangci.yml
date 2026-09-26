@@ -78,10 +78,6 @@ linters:
     testifylint: {}
     usetesting:
       os-temp-dir: true
-    forbidigo:
-      forbid:
-        - pattern: "^(print|println)$"
-          msg: "use fmt.Print* instead of built-in print/println"
     perfsprint:
       concat-loop: false
     govet:
@@ -106,12 +102,20 @@ issues:
   max-same-issues: 0
 formatters:
   enable:
+    - gci
     - gofmt
     - gofumpt
     - golines
   settings:
+    gci:
+      custom-order: true
+      sections:
+        - standard
+        - prefix(github.com/go-signet/sdk-go)
+        - default
     gofumpt:
-      extra-rules: true
+      extra:
+        group-params: true
   exclusions:
     generated: lax
 run:

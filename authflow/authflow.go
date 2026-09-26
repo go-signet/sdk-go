@@ -25,10 +25,10 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/singleflight"
-
 	"github.com/go-signet/sdk-go/credstore"
 	"github.com/go-signet/sdk-go/oauth"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // ErrReauthRequired is returned by TokenSource.Token when interactive
@@ -65,6 +65,7 @@ type DefaultDeviceFlowHandler struct{}
 
 // DisplayCode prints instructions for the user.
 func (h DefaultDeviceFlowHandler) DisplayCode(auth *oauth.DeviceAuth) error {
+	//nolint:forbidigo // The default interactive handler displays the device code to the user.
 	fmt.Printf(
 		"Open %s in your browser and enter code: %s\n",
 		auth.VerificationURI,
@@ -356,6 +357,7 @@ func RunAuthCodeFlow(
 	authURL := endpoints.AuthorizeURL + "?" + params.Encode()
 
 	if err := openBrowser(authURL); err != nil {
+		//nolint:forbidigo // Print the fallback URL when a browser cannot be opened.
 		fmt.Printf("Open this URL in your browser:\n%s\n", authURL)
 	}
 

@@ -1,4 +1,5 @@
 GO ?= go
+TOOLS_MOD := -modfile=go.tools.mod
 TAGS ?=
 
 ## test: run tests
@@ -9,17 +10,20 @@ test:
 coverage: test
 	$(GO) tool cover -html=coverage.txt
 
-## install-golangci-lint: install golangci-lint if not present
-install-golangci-lint:
-	@command -v golangci-lint >/dev/null 2>&1 || curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $$($(GO) env GOPATH)/bin v2.7.2
+## install-tools: download tool dependencies
+install-tools:
+	$(GO) mod download $(TOOLS_MOD)
+
+## install-golangci-lint: compatibility alias for install-tools
+install-golangci-lint: install-tools
 
 ## fmt: format go files using golangci-lint
-fmt: install-golangci-lint
-	golangci-lint fmt
+fmt:
+	$(GO) tool $(TOOLS_MOD) golangci-lint fmt
 
 ## lint: run golangci-lint to check for issues
-lint: install-golangci-lint
-	golangci-lint run
+lint:
+	$(GO) tool $(TOOLS_MOD) golangci-lint run
 
 ## clean: remove test coverage
 clean:
@@ -40,7 +44,6 @@ mod-verify:
 ## check-tools: verify required tools are installed
 check-tools:
 	@command -v $(GO) >/dev/null 2>&1 || (echo "Go not found" && exit 1)
-	@command -v golangci-lint >/dev/null 2>&1 || echo "golangci-lint not installed (run: make install-golangci-lint)"
 
 ## help: print this help message
 help:
@@ -49,3 +52,5 @@ help:
 
 .PHONY: help test coverage fmt lint clean
 .PHONY: install-golangci-lint mod-download mod-tidy mod-verify check-tools
+
+.PHONY: install-tools

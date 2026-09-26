@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	retry "github.com/appleboy/go-httpretry"
-
 	"github.com/go-signet/sdk-go/jwksauth"
 	"github.com/go-signet/sdk-go/oauth"
+
+	retry "github.com/appleboy/go-httpretry"
 )
 
 var (

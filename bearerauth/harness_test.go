@@ -17,12 +17,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-signet/sdk-go/bearerauth"
+	"github.com/go-signet/sdk-go/jwksauth"
+
 	retry "github.com/appleboy/go-httpretry"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-
-	"github.com/go-signet/sdk-go/bearerauth"
-	"github.com/go-signet/sdk-go/jwksauth"
 )
 
 const (

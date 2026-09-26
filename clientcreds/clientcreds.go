@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/singleflight"
-
 	"github.com/go-signet/sdk-go/oauth"
+
+	"golang.org/x/sync/singleflight"
 )
 
 const defaultExpiryDelta = 30 * time.Second
