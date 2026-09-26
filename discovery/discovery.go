@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-signet/sdk-go/oauth"
+
 	retry "github.com/appleboy/go-httpretry"
 	"golang.org/x/sync/singleflight"
-
-	"github.com/go-signet/sdk-go/oauth"
 )
 
 const (

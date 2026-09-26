@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-signet/sdk-go/credstore"
+
 	"github.com/zalando/go-keyring"
 )
 

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	retry "github.com/appleboy/go-httpretry"
-
 	"github.com/go-signet/sdk-go/bearerauth"
 	"github.com/go-signet/sdk-go/jwksauth"
+
+	retry "github.com/appleboy/go-httpretry"
 )
 
 // Example verifies a credential that may be either a JWT access token or a
