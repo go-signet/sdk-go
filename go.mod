@@ -1,6 +1,6 @@
 module github.com/go-signet/sdk-go
 
-go 1.26.0
+go 1.26.10
 
 require (
 	github.com/appleboy/go-httpretry v0.13.0
