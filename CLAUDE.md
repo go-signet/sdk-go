@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Go SDK for Signet. Module: `github.com/go-signet/sdk-go` (Go 1.25+)
+Go SDK for Signet. Module: `github.com/go-signet/sdk-go` (Go 1.26.10+)
 
 Packages:
 
