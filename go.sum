@@ -1,5 +1,5 @@
-github.com/appleboy/go-httpretry v0.13.0 h1:8m1Q+Kkutr5v1AZVR00HkSHXvNZEJ84RXUryqvd/6MM=
-github.com/appleboy/go-httpretry v0.13.0/go.mod h1:M0EZ/bwBWvCo5eRjQBb+/CRNjYqBcZDcL252FqxiYR8=
+github.com/appleboy/go-httpretry v0.13.1 h1:3t9aSngNbG2p7QWFe5oBMdcU5awrrEjh4rNzhh/1mas=
+github.com/appleboy/go-httpretry v0.13.1/go.mod h1:ap12cbQsymOQkXSeIWKNN7tmm//rQm046CVeg+dooiU=
 github.com/coreos/go-oidc/v3 v3.21.0 h1:wZo4Q9Pum8dYEj0eMUPrqR+kvuGkeUplbLpNCkBqoWM=
 github.com/coreos/go-oidc/v3 v3.21.0/go.mod h1:DYCf24+ncYi+XkIH97GY1+dqoRlbaSI26KVTCI9SrY4=
 github.com/danieljoos/wincred v1.2.3 h1:v7dZC2x32Ut3nEfRH+vhoZGvN72+dQ/snVXo/vMFLdQ=
