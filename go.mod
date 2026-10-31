@@ -5,14 +5,14 @@ go 1.26.10
 require (
 	github.com/appleboy/go-httpretry v0.13.1
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/go-jose/go-jose/v4 v4.1.6
+	github.com/go-jose/go-jose/v4 v4.1.7
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/sync v0.24.0
 )
 
 require (
 	github.com/danieljoos/wincred v1.2.3 // indirect
-	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/godbus/dbus/v5 v5.2.4 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 )
