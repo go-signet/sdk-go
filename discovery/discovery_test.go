@@ -54,7 +54,7 @@ func TestFetch(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	result, err := client.Fetch(context.Background())
+	result, err := client.Fetch(t.Context())
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -101,12 +101,12 @@ func TestFetch_Cache(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	_, err = client.Fetch(context.Background())
+	_, err = client.Fetch(t.Context())
 	if err != nil {
 		t.Fatalf("Fetch 1: %v", err)
 	}
 
-	_, err = client.Fetch(context.Background())
+	_, err = client.Fetch(t.Context())
 	if err != nil {
 		t.Fatalf("Fetch 2: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestFetch_CacheCopy(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	result1, err := client.Fetch(context.Background())
+	result1, err := client.Fetch(t.Context())
 	if err != nil {
 		t.Fatalf("Fetch 1: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestFetch_CacheCopy(t *testing.T) {
 		result1.ScopesSupported[0] = "corrupted"
 	}
 
-	result2, err := client.Fetch(context.Background())
+	result2, err := client.Fetch(t.Context())
 	if err != nil {
 		t.Fatalf("Fetch 2: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestFetch_Concurrent(t *testing.T) {
 
 	for range goroutines {
 		wg.Go(func() {
-			_, fetchErr := client.Fetch(context.Background())
+			_, fetchErr := client.Fetch(t.Context())
 			if fetchErr != nil {
 				errs <- fetchErr
 			}
@@ -242,7 +242,7 @@ func TestFetch_ConcurrentCancellation(t *testing.T) {
 	}
 
 	// Caller A cancels its context while the shared fetch is in flight.
-	ctxA, cancelA := context.WithCancel(context.Background())
+	ctxA, cancelA := context.WithCancel(t.Context())
 	errA := make(chan error, 1)
 	go func() {
 		_, e := client.Fetch(ctxA)
@@ -267,7 +267,7 @@ func TestFetch_ConcurrentCancellation(t *testing.T) {
 	// A subsequent fetch must succeed from the completed shared fetch (cache
 	// hit, or coalesced into the still-in-flight call) with no second server
 	// round-trip — proving A's cancellation did not abort the shared fetch.
-	meta, err := client.Fetch(context.Background())
+	meta, err := client.Fetch(t.Context())
 	if err != nil {
 		t.Fatalf("Fetch after canceled caller: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestFetch_ServerError(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	_, err = client.Fetch(context.Background())
+	_, err = client.Fetch(t.Context())
 	if err == nil {
 		t.Fatal("expected error for 404 response")
 	}
@@ -347,7 +347,7 @@ func TestFetch_ResponseBodyTooLarge(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	_, err = client.Fetch(context.Background())
+	_, err = client.Fetch(t.Context())
 	if err == nil {
 		t.Fatal("expected error for oversized discovery response")
 	}
@@ -371,7 +371,7 @@ func TestFetch_IssuerMismatch(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	_, err = client.Fetch(context.Background())
+	_, err = client.Fetch(t.Context())
 	if err == nil {
 		t.Fatal("expected error for issuer mismatch")
 	}

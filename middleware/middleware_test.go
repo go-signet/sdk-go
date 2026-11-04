@@ -228,8 +228,8 @@ func TestBearerAuth_RequiredScopes_CustomErrorHandler(t *testing.T) {
 		)
 	}
 
-	var oauthErr *oauth.Error
-	if !errors.As(gotErr, &oauthErr) {
+	oauthErr, matched := errors.AsType[*oauth.Error](gotErr)
+	if !matched {
 		t.Fatalf("error handler received %v, want *oauth.Error", gotErr)
 	}
 	if oauthErr.Code != oauth.ErrCodeInsufficientScope {
@@ -369,7 +369,7 @@ func TestRequireScope(t *testing.T) {
 
 	// Test with matching scope
 	info := &TokenInfo{Scope: "read write"}
-	ctx := context.WithValue(context.Background(), contextKey{}, info)
+	ctx := context.WithValue(t.Context(), contextKey{}, info)
 	req = httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -467,7 +467,7 @@ func TestTokenInfo_HasScope(t *testing.T) {
 }
 
 func TestHasScope_Convenience(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	if HasScope(ctx, "read") {
 		t.Error("should return false without token info")
 	}

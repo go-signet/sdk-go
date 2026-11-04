@@ -1,6 +1,7 @@
 package credstore_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -46,7 +47,7 @@ func TestKeyringStore_LoadNotFound(t *testing.T) {
 	store := credstore.NewTokenKeyringStore("test-service")
 
 	_, err := store.Load("nonexistent")
-	if err != credstore.ErrNotFound {
+	if !errors.Is(err, credstore.ErrNotFound) {
 		t.Errorf("Load() error = %v, want ErrNotFound", err)
 	}
 }
@@ -68,7 +69,7 @@ func TestKeyringStore_Delete(t *testing.T) {
 	}
 
 	_, err := store.Load("test-client")
-	if err != credstore.ErrNotFound {
+	if !errors.Is(err, credstore.ErrNotFound) {
 		t.Errorf("Load() after Delete() error = %v, want ErrNotFound", err)
 	}
 }
@@ -140,7 +141,7 @@ func TestKeyringStore_SaveEmptyClientID(t *testing.T) {
 	store := credstore.NewTokenKeyringStore("test-service")
 
 	err := store.Save("", credstore.Token{AccessToken: "tok"})
-	if err != credstore.ErrEmptyClientID {
+	if !errors.Is(err, credstore.ErrEmptyClientID) {
 		t.Errorf("Save(empty clientID) error = %v, want ErrEmptyClientID", err)
 	}
 }

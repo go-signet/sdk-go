@@ -456,8 +456,8 @@ func TestVerifyPolicyParity(t *testing.T) {
 						t.Fatalf("err = %v, want %v", err, tc.wantSentinel)
 					}
 					if tc.wantMissing != "" {
-						var scopeErr *bearerauth.InsufficientScopeError
-						if !errors.As(err, &scopeErr) {
+						scopeErr, matched := errors.AsType[*bearerauth.InsufficientScopeError](err)
+						if !matched {
 							t.Fatalf("err = %v, want *InsufficientScopeError", err)
 						}
 						if scopeErr.MissingScope != tc.wantMissing {
@@ -648,8 +648,8 @@ func TestPolicyScopeCanonicalizationIsStable(t *testing.T) {
 	)
 
 	_, err := v.Verify(t.Context(), fi.sign(t, time.Hour, nil))
-	var scopeErr *bearerauth.InsufficientScopeError
-	if !errors.As(err, &scopeErr) {
+	scopeErr, matched := errors.AsType[*bearerauth.InsufficientScopeError](err)
+	if !matched {
 		t.Fatalf("err = %v, want *InsufficientScopeError", err)
 	}
 	if scopeErr.MissingScope != "admin" {
@@ -667,7 +667,7 @@ func TestPolicyScopeCanonicalizationIsStable(t *testing.T) {
 func TestVerifyBrokenJWTVerifier(t *testing.T) {
 	const hostileSecret = "super-secret-token-value"
 
-	cancelled, cancel := context.WithCancel(context.Background())
+	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	tests := []struct {

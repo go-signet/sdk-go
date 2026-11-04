@@ -1,7 +1,6 @@
 package oauth
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -76,9 +75,9 @@ func TestExchangeOnBehalfOfRejectsInvalidLocalInput(t *testing.T) {
 		{Assertion: "source", Resource: "https://api-b.example.com", Scopes: []string{" \t "}},
 	}
 	for _, req := range tests {
-		_, err := client.ExchangeOnBehalfOf(context.Background(), req)
-		var oauthErr *Error
-		if !errors.As(err, &oauthErr) || oauthErr.Code != ErrCodeInvalidRequest {
+		_, err := client.ExchangeOnBehalfOf(t.Context(), req)
+		oauthErr, matched := errors.AsType[*Error](err)
+		if !matched || oauthErr.Code != ErrCodeInvalidRequest {
 			t.Fatalf("error = %v, want invalid_request", err)
 		}
 	}
@@ -117,8 +116,8 @@ func TestExchangeOnBehalfOfPreservesOAuthErrorsWithoutSecrets(t *testing.T) {
 				Resource:  "https://api-b.example.com",
 				Scopes:    []string{"read"},
 			})
-			var oauthErr *Error
-			if !errors.As(err, &oauthErr) || oauthErr.Code != code {
+			oauthErr, matched := errors.AsType[*Error](err)
+			if !matched || oauthErr.Code != code {
 				t.Fatalf("error = %v, want %q", err, code)
 			}
 			if strings.Contains(err.Error(), "source-token-value") ||

@@ -542,8 +542,8 @@ func (ts *TokenSource) loadOrRefresh(ctx context.Context) (*oauth.Token, error) 
 		// invalid_grant / invalid_token mean the refresh token is no longer
 		// usable (revoked or expired). Surface as ErrReauthRequired so callers
 		// fall back to interactive re-authentication.
-		var oauthErr *oauth.Error
-		if errors.As(err, &oauthErr) &&
+		oauthErr, matched := errors.AsType[*oauth.Error](err)
+		if matched &&
 			(oauthErr.Code == oauth.ErrCodeInvalidGrant || oauthErr.Code == oauth.ErrCodeInvalidToken) {
 			return nil, fmt.Errorf("%w: %w", ErrReauthRequired, err)
 		}

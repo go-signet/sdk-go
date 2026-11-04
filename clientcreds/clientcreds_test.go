@@ -1,7 +1,6 @@
 package clientcreds
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -52,7 +51,7 @@ func TestTokenSource_Token(t *testing.T) {
 
 	ts := NewTokenSource(oauthClient, WithScopes("read", "write"))
 
-	token, err := ts.Token(context.Background())
+	token, err := ts.Token(t.Context())
 	if err != nil {
 		t.Fatalf("Token: %v", err)
 	}
@@ -94,12 +93,12 @@ func TestTokenSource_Cache(t *testing.T) {
 
 	ts := NewTokenSource(oauthClient, WithScopes("read"))
 
-	token1, err := ts.Token(context.Background())
+	token1, err := ts.Token(t.Context())
 	if err != nil {
 		t.Fatalf("Token 1: %v", err)
 	}
 
-	token2, err := ts.Token(context.Background())
+	token2, err := ts.Token(t.Context())
 	if err != nil {
 		t.Fatalf("Token 2: %v", err)
 	}
@@ -136,12 +135,12 @@ func TestTokenSource_ExpiryDelta(t *testing.T) {
 	// With a large expiry delta, the token will be considered "about to expire" immediately
 	ts := NewTokenSource(oauthClient, WithExpiryDelta(1*time.Hour))
 
-	token1, err := ts.Token(context.Background())
+	token1, err := ts.Token(t.Context())
 	if err != nil {
 		t.Fatalf("Token 1: %v", err)
 	}
 
-	token2, err := ts.Token(context.Background())
+	token2, err := ts.Token(t.Context())
 	if err != nil {
 		t.Fatalf("Token 2: %v", err)
 	}
@@ -156,7 +155,7 @@ func TestTokenSource_HTTPClient(t *testing.T) {
 	ts := NewTokenSource(oauthClient, WithScopes("read"))
 
 	// Get a token first so the transport has one cached
-	_, err := ts.Token(context.Background())
+	_, err := ts.Token(t.Context())
 	if err != nil {
 		t.Fatalf("Token: %v", err)
 	}

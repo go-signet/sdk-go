@@ -258,14 +258,12 @@ func TestWithFileLock_MutualExclusion(t *testing.T) {
 	concurrent := 0
 
 	for i := range goroutines {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
+		wg.Go(func() {
 			err := store.withFileLock(func() error {
 				mu.Lock()
 				concurrent++
 				if concurrent > 1 {
-					t.Errorf("goroutine %d: concurrent holders = %d", idx, concurrent)
+					t.Errorf("goroutine %d: concurrent holders = %d", i, concurrent)
 				}
 				mu.Unlock()
 
@@ -275,9 +273,9 @@ func TestWithFileLock_MutualExclusion(t *testing.T) {
 				return nil
 			})
 			if err != nil {
-				t.Errorf("goroutine %d: withFileLock() error = %v", idx, err)
+				t.Errorf("goroutine %d: withFileLock() error = %v", i, err)
 			}
-		}(i)
+		})
 	}
 
 	wg.Wait()

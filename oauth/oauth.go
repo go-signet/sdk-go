@@ -199,8 +199,8 @@ type IntrospectionResult struct {
 	ClientID  string   `json:"client_id,omitempty"`
 	Username  string   `json:"username,omitempty"`
 	TokenType string   `json:"token_type,omitempty"`
-	Exp       int64    `json:"exp,omitempty"`
-	Iat       int64    `json:"iat,omitempty"`
+	Exp       int64    `json:"exp,omitzero"`
+	Iat       int64    `json:"iat,omitzero"`
 	Sub       string   `json:"sub,omitempty"`
 	Iss       string   `json:"iss,omitempty"`
 	Jti       string   `json:"jti,omitempty"`
@@ -215,9 +215,9 @@ type UserInfo struct {
 	Name              string `json:"name,omitempty"`
 	PreferredUsername string `json:"preferred_username,omitempty"`
 	Email             string `json:"email,omitempty"`
-	EmailVerified     bool   `json:"email_verified,omitempty"`
+	EmailVerified     bool   `json:"email_verified,omitzero"`
 	Picture           string `json:"picture,omitempty"`
-	UpdatedAt         int64  `json:"updated_at,omitempty"`
+	UpdatedAt         int64  `json:"updated_at,omitzero"`
 	SubjectType       string `json:"subject_type,omitempty"`
 }
 

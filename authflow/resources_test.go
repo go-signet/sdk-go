@@ -1,7 +1,6 @@
 package authflow
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -29,8 +28,8 @@ func TestWithResourcesCopiesAndValidates(t *testing.T) {
 
 	for _, resources := range [][]string{{""}, {"https://api.example.com", " \t "}} {
 		_, err := validateResources(resources)
-		var oauthErr *oauth.Error
-		if !errors.As(err, &oauthErr) || oauthErr.Code != oauth.ErrCodeInvalidRequest {
+		oauthErr, matched := errors.AsType[*oauth.Error](err)
+		if !matched || oauthErr.Code != oauth.ErrCodeInvalidRequest {
 			t.Fatalf("error = %v, want invalid_request", err)
 		}
 	}
@@ -117,11 +116,11 @@ func TestTokenSourceSeparatesResourceCaches(t *testing.T) {
 		t.Fatalf("resource-set order changed cache key: %q %q",
 			aReordered.storeKey(), aCanonical.storeKey())
 	}
-	got, err := a.Token(context.Background())
+	got, err := a.Token(t.Context())
 	if err != nil || got.AccessToken != "token-a" {
 		t.Fatalf("resource A cache = %+v, %v", got, err)
 	}
-	if _, err := b.Token(context.Background()); !errors.Is(err, ErrReauthRequired) {
+	if _, err := b.Token(t.Context()); !errors.Is(err, ErrReauthRequired) {
 		t.Fatalf("resource B error = %v, want ErrReauthRequired", err)
 	}
 }
@@ -224,8 +223,8 @@ func TestInvalidFlowResourceFailsBeforeNetwork(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 	_, err = RunDeviceFlow(t.Context(), client, nil, WithResources(" "))
-	var oauthErr *oauth.Error
-	if !errors.As(err, &oauthErr) || oauthErr.Code != oauth.ErrCodeInvalidRequest {
+	oauthErr, matched := errors.AsType[*oauth.Error](err)
+	if !matched || oauthErr.Code != oauth.ErrCodeInvalidRequest {
 		t.Fatalf("error = %v, want invalid_request", err)
 	}
 }
