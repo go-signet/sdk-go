@@ -41,20 +41,17 @@ func TestConcurrentLocks(t *testing.T) {
 	concurrent := 0
 
 	for i := range goroutines {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-
+		wg.Go(func() {
 			lock, err := acquireFileLock(target)
 			if err != nil {
-				t.Errorf("goroutine %d: acquireFileLock() error: %v", idx, err)
+				t.Errorf("goroutine %d: acquireFileLock() error: %v", i, err)
 				return
 			}
 
 			mu.Lock()
 			concurrent++
 			if concurrent > 1 {
-				t.Errorf("goroutine %d: more than one lock holder at a time: %d", idx, concurrent)
+				t.Errorf("goroutine %d: more than one lock holder at a time: %d", i, concurrent)
 			}
 			mu.Unlock()
 
@@ -63,7 +60,7 @@ func TestConcurrentLocks(t *testing.T) {
 			mu.Unlock()
 
 			_ = lock.release()
-		}(i)
+		})
 	}
 
 	wg.Wait()

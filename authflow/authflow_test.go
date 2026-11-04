@@ -69,7 +69,7 @@ func TestRunDeviceFlow(t *testing.T) {
 		}
 	}}
 
-	token, err := RunDeviceFlow(context.Background(), client, []string{"read"},
+	token, err := RunDeviceFlow(t.Context(), client, []string{"read"},
 		WithDeviceFlowHandler(handler),
 	)
 	if err != nil {
@@ -114,7 +114,7 @@ func TestRunDeviceFlow_Cancelled(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // Cancel immediately
 
 	_, err = RunDeviceFlow(ctx, client, []string{"read"},
@@ -126,7 +126,7 @@ func TestRunDeviceFlow_Cancelled(t *testing.T) {
 }
 
 func TestRunAuthCodeFlow(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	// Test generateState produces unique values
@@ -310,8 +310,8 @@ func TestRunAuthCodeFlow_InvalidState(t *testing.T) {
 	case <-codeCh:
 		t.Error("should not receive code with wrong state")
 	case err := <-errCh:
-		var oauthErr *oauth.Error
-		if !errors.As(err, &oauthErr) || oauthErr.Code != oauth.ErrCodeInvalidState {
+		oauthErr, matched := errors.AsType[*oauth.Error](err)
+		if !matched || oauthErr.Code != oauth.ErrCodeInvalidState {
 			t.Errorf("expected invalid_state error, got: %v", err)
 		}
 	}
@@ -381,7 +381,7 @@ func TestTokenSource_LoadValid(t *testing.T) {
 	}
 
 	ts := NewTokenSource(client, WithStore(store))
-	token, err := ts.Token(context.Background())
+	token, err := ts.Token(t.Context())
 	if err != nil {
 		t.Fatalf("Token: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestTokenSource_RefreshExpired(t *testing.T) {
 	}
 
 	ts := NewTokenSource(client, WithStore(store))
-	token, err := ts.Token(context.Background())
+	token, err := ts.Token(t.Context())
 	if err != nil {
 		t.Fatalf("Token: %v", err)
 	}
@@ -459,7 +459,7 @@ func TestTokenSource_NoToken(t *testing.T) {
 	}
 
 	ts := NewTokenSource(client, WithStore(store))
-	_, err = ts.Token(context.Background())
+	_, err = ts.Token(t.Context())
 	if !errors.Is(err, ErrReauthRequired) {
 		t.Fatalf("expected ErrReauthRequired, got: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestTokenSource_NoStore(t *testing.T) {
 	}
 
 	ts := NewTokenSource(client) // no store configured
-	_, err = ts.Token(context.Background())
+	_, err = ts.Token(t.Context())
 	if !errors.Is(err, ErrReauthRequired) {
 		t.Fatalf("expected ErrReauthRequired, got: %v", err)
 	}
@@ -500,7 +500,7 @@ func TestTokenSource_ExpiredNoRefreshToken(t *testing.T) {
 	}
 
 	ts := NewTokenSource(client, WithStore(store))
-	_, err = ts.Token(context.Background())
+	_, err = ts.Token(t.Context())
 	if !errors.Is(err, ErrReauthRequired) {
 		t.Fatalf("expected ErrReauthRequired, got: %v", err)
 	}
@@ -535,7 +535,7 @@ func TestTokenSource_RefreshInvalidGrant(t *testing.T) {
 	}
 
 	ts := NewTokenSource(client, WithStore(store))
-	_, err = ts.Token(context.Background())
+	_, err = ts.Token(t.Context())
 	if !errors.Is(err, ErrReauthRequired) {
 		t.Fatalf("expected ErrReauthRequired for invalid_grant refresh, got: %v", err)
 	}
@@ -554,7 +554,7 @@ func TestTokenSource_LoadError(t *testing.T) {
 	}
 
 	ts := NewTokenSource(client, WithStore(store))
-	_, err = ts.Token(context.Background())
+	_, err = ts.Token(t.Context())
 	if err == nil {
 		t.Fatal("expected error for store load failure")
 	}
@@ -597,7 +597,7 @@ func TestTokenSource_SaveError(t *testing.T) {
 	}
 
 	ts := NewTokenSource(client, WithStore(store))
-	_, err = ts.Token(context.Background())
+	_, err = ts.Token(t.Context())
 	if err == nil {
 		t.Fatal("expected error for store save failure")
 	}
@@ -694,7 +694,7 @@ func TestTokenSource_RefreshDoesNotOverwriteConcurrentSave(t *testing.T) {
 	}
 	out := make(chan result, 1)
 	go func() {
-		tok, err := ts.Token(context.Background())
+		tok, err := ts.Token(t.Context())
 		out <- result{tok, err}
 	}()
 
@@ -777,7 +777,7 @@ func TestTokenSource_RefreshPreservesOmittedFields(t *testing.T) {
 	}
 
 	ts := NewTokenSource(client, WithStore(store))
-	tok, err := ts.Token(context.Background())
+	tok, err := ts.Token(t.Context())
 	if err != nil {
 		t.Fatalf("Token: %v", err)
 	}

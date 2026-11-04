@@ -155,8 +155,7 @@ func ExampleVerifier_Verify() {
 
 		case errors.Is(err, bearerauth.ErrInsufficientScope):
 			// Advertise what to request next time (RFC 6750 §3.1).
-			var scopeErr *bearerauth.InsufficientScopeError
-			errors.As(err, &scopeErr)
+			scopeErr, _ := errors.AsType[*bearerauth.InsufficientScopeError](err)
 			w.Header().Set(
 				"WWW-Authenticate",
 				`Bearer error="insufficient_scope", scope="`+scopeErr.MissingScope+`"`,

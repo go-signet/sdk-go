@@ -1,7 +1,6 @@
 package jwksauth
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -37,7 +36,7 @@ func TestPrefixedClaims_DefaultPrefix_HappyPath(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 
-	info, err := v.Verify(context.Background(), tok)
+	info, err := v.Verify(t.Context(), tok)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
@@ -86,7 +85,7 @@ func TestPrefixedClaims_CustomPrefix(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Errorf("status = %d, want 200", rec.Code)
 		}
-		info, err := v.Verify(context.Background(), tok)
+		info, err := v.Verify(t.Context(), tok)
 		if err != nil {
 			t.Fatalf("Verify: %v", err)
 		}
@@ -103,7 +102,7 @@ func TestPrefixedClaims_CustomPrefix(t *testing.T) {
 			"extra_domain": "oa",
 			"extra_uid":    "alice",
 		})
-		info, err := v.Verify(context.Background(), tok)
+		info, err := v.Verify(t.Context(), tok)
 		if err != nil {
 			t.Fatalf("Verify: %v", err)
 		}
@@ -154,7 +153,7 @@ func TestPrefixedClaims_BareDomainIgnored(t *testing.T) {
 	}
 	tok := fi.Sign(t, "api://x", time.Minute, map[string]any{"domain": "oa"})
 
-	info, err := v.Verify(context.Background(), tok)
+	info, err := v.Verify(t.Context(), tok)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
@@ -194,7 +193,7 @@ func TestPrefixedClaims_BareUIDIgnored(t *testing.T) {
 	}
 	tok := fi.Sign(t, "api://x", time.Minute, map[string]any{"uid": "alice"})
 
-	info, err := v.Verify(context.Background(), tok)
+	info, err := v.Verify(t.Context(), tok)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
@@ -228,7 +227,7 @@ func TestPrefixedClaims_CallerSuppliedKeysDoNotPromote(t *testing.T) {
 		"foo":       "baz",
 	})
 
-	info, err := v.Verify(context.Background(), tok)
+	info, err := v.Verify(t.Context(), tok)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}

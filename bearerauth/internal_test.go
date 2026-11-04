@@ -190,10 +190,10 @@ func TestValidateEndpoint(t *testing.T) {
 func TestUnavailablePreservesOnlyContextIdentity(t *testing.T) {
 	hostile := hostileError{err: errors.New("upstream said: Bearer sgk_secret")}
 
-	cancelled, cancel := context.WithCancel(context.Background())
+	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
 	expired, cancelExpired := context.WithDeadline(
-		context.Background(),
+		t.Context(),
 		time.Now().Add(-time.Second),
 	)
 	defer cancelExpired()
@@ -206,8 +206,8 @@ func TestUnavailablePreservesOnlyContextIdentity(t *testing.T) {
 		cause       error
 		wantContext error
 	}{
-		{name: "nil cause", ctx: context.Background()},
-		{name: "hostile cause", ctx: context.Background(), cause: hostile},
+		{name: "nil cause", ctx: t.Context()},
+		{name: "hostile cause", ctx: t.Context(), cause: hostile},
 		{
 			name:        "cancelled by the caller",
 			ctx:         cancelled,
@@ -226,7 +226,7 @@ func TestUnavailablePreservesOnlyContextIdentity(t *testing.T) {
 			// caller is still waiting, so re-exporting the sentinel would tell
 			// an adapter the client gave up when it did not.
 			name:  "internal deadline while the caller is still alive",
-			ctx:   context.Background(),
+			ctx:   t.Context(),
 			cause: hostileError{err: context.DeadlineExceeded},
 		},
 	}
@@ -259,9 +259,9 @@ func TestInsufficientScopeErrorContract(t *testing.T) {
 	if !errors.Is(err, ErrInsufficientScope) {
 		t.Errorf("errors.Is(err, ErrInsufficientScope) = false")
 	}
-	var scopeErr *InsufficientScopeError
-	if !errors.As(err, &scopeErr) || scopeErr.MissingScope != "admin" {
-		t.Errorf("errors.As did not recover MissingScope from %v", err)
+	scopeErr, matched := errors.AsType[*InsufficientScopeError](err)
+	if !matched || scopeErr.MissingScope != "admin" {
+		t.Errorf("errors.AsType did not recover MissingScope from %v", err)
 	}
 	if !strings.Contains(err.Error(), "admin") {
 		t.Errorf("Error() = %q, want it to name the missing scope", err)

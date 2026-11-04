@@ -360,19 +360,15 @@ func TestSecureStore_Refresh_ConcurrentSafe(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 50 {
-		wg.Add(3)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = store.Refresh()
-		}()
-		go func() {
-			defer wg.Done()
+		})
+		wg.Go(func() {
 			_ = store.Save("client", Token{AccessToken: "t", ClientID: "client"})
-		}()
-		go func() {
-			defer wg.Done()
+		})
+		wg.Go(func() {
 			_, _ = store.Load("client")
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -576,20 +572,16 @@ func TestWithBackendChangeHandler_ConcurrentSafe(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 50 {
-		wg.Add(3)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			kr.probeResult.Store(!kr.probeResult.Load())
 			_ = store.Refresh()
-		}()
-		go func() {
-			defer wg.Done()
+		})
+		wg.Go(func() {
 			_ = store.Diagnostic()
-		}()
-		go func() {
-			defer wg.Done()
+		})
+		wg.Go(func() {
 			_ = store.Save("client", Token{AccessToken: "t", ClientID: "client"})
-		}()
+		})
 	}
 	wg.Wait()
 }

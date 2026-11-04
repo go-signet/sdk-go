@@ -122,7 +122,7 @@ func TestVerifier_HappyPath(t *testing.T) {
 		"extra_project":         "p1",
 		"extra_uid":             "alice",
 	})
-	info, err := v.Verify(context.Background(), tok)
+	info, err := v.Verify(t.Context(), tok)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestVerifier_ClientCredentialsShape_UIDEmpty(t *testing.T) {
 		"extra_project": "p1",
 	})
 
-	info, err := v.Verify(context.Background(), tok)
+	info, err := v.Verify(t.Context(), tok)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestVerifierSkipAudience_AcceptsTokenWithoutAud(t *testing.T) {
 	}
 	// Sign a token without an `aud` claim by passing an empty audience.
 	tok := fi.Sign(t, "", time.Minute, nil)
-	if _, err := v.Verify(context.Background(), tok); err != nil {
+	if _, err := v.Verify(t.Context(), tok); err != nil {
 		t.Fatalf("Verify rejected an aud-less token: %v", err)
 	}
 }
@@ -226,7 +226,7 @@ func TestVerifier_RejectsWrongAudience(t *testing.T) {
 		t.Fatalf("NewVerifier: %v", err)
 	}
 	tok := fi.Sign(t, "api://other", time.Minute, nil)
-	if _, err := v.Verify(context.Background(), tok); err == nil {
+	if _, err := v.Verify(t.Context(), tok); err == nil {
 		t.Fatal("expected audience mismatch error")
 	}
 }
@@ -238,7 +238,7 @@ func TestVerifier_RejectsExpired(t *testing.T) {
 		t.Fatalf("NewVerifier: %v", err)
 	}
 	tok := fi.Sign(t, "api://x", -time.Minute, nil)
-	if _, err := v.Verify(context.Background(), tok); err == nil {
+	if _, err := v.Verify(t.Context(), tok); err == nil {
 		t.Fatal("expected expired error")
 	}
 }
@@ -480,7 +480,7 @@ func TestMultiVerifier_RoutesByIssuer(t *testing.T) {
 	}
 
 	tokA := a.Sign(t, "api://x", time.Minute, map[string]any{"extra_domain": "oa"})
-	infoA, err := mv.Verify(context.Background(), tokA)
+	infoA, err := mv.Verify(t.Context(), tokA)
 	if err != nil {
 		t.Fatalf("Verify A: %v", err)
 	}
@@ -489,7 +489,7 @@ func TestMultiVerifier_RoutesByIssuer(t *testing.T) {
 	}
 
 	tokB := b.Sign(t, "api://x", time.Minute, map[string]any{"extra_domain": "swrd"})
-	infoB, err := mv.Verify(context.Background(), tokB)
+	infoB, err := mv.Verify(t.Context(), tokB)
 	if err != nil {
 		t.Fatalf("Verify B: %v", err)
 	}
@@ -507,7 +507,7 @@ func TestMultiVerifier_RejectsUntrustedIssuer(t *testing.T) {
 		t.Fatalf("NewMultiVerifier: %v", err)
 	}
 	tok := b.Sign(t, "api://x", time.Minute, nil)
-	_, err = mv.Verify(context.Background(), tok)
+	_, err = mv.Verify(t.Context(), tok)
 	if !errors.Is(err, ErrUntrustedIssuer) {
 		t.Fatalf("error = %v, want ErrUntrustedIssuer", err)
 	}
@@ -527,7 +527,7 @@ func TestMultiVerifier_CrossDomainDefense(t *testing.T) {
 	// Issuer A claims domain 'swrd' (which belongs to B) → reject. The
 	// error must not echo back the configured allowlist for this issuer.
 	tok := a.Sign(t, "api://x", time.Minute, map[string]any{"extra_domain": "swrd"})
-	_, rejErr := mv.Verify(context.Background(), tok)
+	_, rejErr := mv.Verify(t.Context(), tok)
 	if rejErr == nil {
 		t.Fatal("expected cross-domain rejection")
 	}
@@ -537,7 +537,7 @@ func TestMultiVerifier_CrossDomainDefense(t *testing.T) {
 
 	// Same issuer, its own domain → accept.
 	tok = a.Sign(t, "api://x", time.Minute, map[string]any{"extra_domain": "oa"})
-	if _, err := mv.Verify(context.Background(), tok); err != nil {
+	if _, err := mv.Verify(t.Context(), tok); err != nil {
 		t.Fatalf("legit token rejected: %v", err)
 	}
 }
@@ -563,7 +563,7 @@ func TestMultiVerifier_SetIssuerDomainsRace(t *testing.T) {
 			case <-stop:
 				return
 			default:
-				_, _ = mv.Verify(context.Background(), tok)
+				_, _ = mv.Verify(t.Context(), tok)
 			}
 		}
 	}()

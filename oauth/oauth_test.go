@@ -1,7 +1,6 @@
 package oauth
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -69,7 +68,7 @@ func TestRequestDeviceCode(t *testing.T) {
 		})
 	})
 
-	auth, err := client.RequestDeviceCode(context.Background(), []string{"read", "write"}, nil)
+	auth, err := client.RequestDeviceCode(t.Context(), []string{"read", "write"}, nil)
 	if err != nil {
 		t.Fatalf("RequestDeviceCode: %v", err)
 	}
@@ -108,7 +107,7 @@ func TestExchangeDeviceCode(t *testing.T) {
 		})
 	})
 
-	token, err := client.ExchangeDeviceCode(context.Background(), "dev-code-123", nil)
+	token, err := client.ExchangeDeviceCode(t.Context(), "dev-code-123", nil)
 	if err != nil {
 		t.Fatalf("ExchangeDeviceCode: %v", err)
 	}
@@ -140,13 +139,13 @@ func TestExchangeDeviceCode_AuthorizationPending(t *testing.T) {
 		})
 	})
 
-	_, err := client.ExchangeDeviceCode(context.Background(), "dev-code-123", nil)
+	_, err := client.ExchangeDeviceCode(t.Context(), "dev-code-123", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
 
-	var oauthErr *Error
-	if !errors.As(err, &oauthErr) {
+	oauthErr, matched := errors.AsType[*Error](err)
+	if !matched {
 		t.Fatalf("expected *Error, got %T: %v", err, err)
 	}
 	if oauthErr.Code != "authorization_pending" {
@@ -181,7 +180,7 @@ func TestExchangeAuthCode(t *testing.T) {
 	})
 
 	token, err := client.ExchangeAuthCode(
-		context.Background(),
+		t.Context(),
 		"auth-code-789",
 		"http://localhost/callback",
 		"verifier-abc",
@@ -230,7 +229,7 @@ func TestClientCredentials(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	token, err := client.ClientCredentials(context.Background(), []string{"read"}, nil)
+	token, err := client.ClientCredentials(t.Context(), []string{"read"}, nil)
 	if err != nil {
 		t.Fatalf("ClientCredentials: %v", err)
 	}
@@ -266,7 +265,7 @@ func TestClientCredentials_EmptySecret(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	token, err := client.ClientCredentials(context.Background(), nil, nil)
+	token, err := client.ClientCredentials(t.Context(), nil, nil)
 	if err != nil {
 		t.Fatalf("ClientCredentials: %v", err)
 	}
@@ -296,7 +295,7 @@ func TestIntrospect_EmptySecret(t *testing.T) {
 		})
 	})
 
-	result, err := client.Introspect(context.Background(), "some-token")
+	result, err := client.Introspect(t.Context(), "some-token")
 	if err != nil {
 		t.Fatalf("Introspect: %v", err)
 	}
@@ -326,7 +325,7 @@ func TestRefreshToken(t *testing.T) {
 		})
 	})
 
-	token, err := client.RefreshToken(context.Background(), "old-refresh", nil)
+	token, err := client.RefreshToken(t.Context(), "old-refresh", nil)
 	if err != nil {
 		t.Fatalf("RefreshToken: %v", err)
 	}
@@ -347,7 +346,7 @@ func TestRevoke(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	err := client.Revoke(context.Background(), "some-token")
+	err := client.Revoke(t.Context(), "some-token")
 	if err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
@@ -369,7 +368,7 @@ func TestIntrospect(t *testing.T) {
 		})
 	})
 
-	result, err := client.Introspect(context.Background(), "some-token")
+	result, err := client.Introspect(t.Context(), "some-token")
 	if err != nil {
 		t.Fatalf("Introspect: %v", err)
 	}
@@ -407,7 +406,7 @@ func TestUserInfo(t *testing.T) {
 		})
 	})
 
-	info, err := client.UserInfo(context.Background(), "my-access-token")
+	info, err := client.UserInfo(t.Context(), "my-access-token")
 	if err != nil {
 		t.Fatalf("UserInfo: %v", err)
 	}
@@ -437,7 +436,7 @@ func TestTokenInfoRequest(t *testing.T) {
 		})
 	})
 
-	info, err := client.TokenInfoRequest(context.Background(), "my-token")
+	info, err := client.TokenInfoRequest(t.Context(), "my-token")
 	if err != nil {
 		t.Fatalf("TokenInfoRequest: %v", err)
 	}
@@ -520,7 +519,7 @@ func TestRequestDeviceCode_NoEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	_, err = client.RequestDeviceCode(context.Background(), []string{"read"}, nil)
+	_, err = client.RequestDeviceCode(t.Context(), []string{"read"}, nil)
 	if err == nil {
 		t.Fatal("expected error for missing endpoint")
 	}
@@ -546,7 +545,7 @@ func TestResponseBodyTooLarge(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	_, err = client.ClientCredentials(context.Background(), nil, nil)
+	_, err = client.ClientCredentials(t.Context(), nil, nil)
 	if err == nil {
 		t.Fatal("expected error for oversized response")
 	}
@@ -572,12 +571,12 @@ func TestErrorResponseBodyTooLarge(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	_, err = client.ClientCredentials(context.Background(), nil, nil)
+	_, err = client.ClientCredentials(t.Context(), nil, nil)
 	if err == nil {
 		t.Fatal("expected error for oversized error response")
 	}
-	var oauthErr *Error
-	if !errors.As(err, &oauthErr) {
+	oauthErr, matched := errors.AsType[*Error](err)
+	if !matched {
 		t.Fatalf("expected *Error, got %T: %v", err, err)
 	}
 	if oauthErr.Description != "error response body exceeds size limit" {
@@ -610,7 +609,7 @@ func TestResponseBodyExactlyAtBoundary(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	_, err = client.ClientCredentials(context.Background(), nil, nil)
+	_, err = client.ClientCredentials(t.Context(), nil, nil)
 	if err == nil {
 		t.Fatal("expected error for response at boundary")
 	}
@@ -630,30 +629,30 @@ func TestConfidentialClientAuth(t *testing.T) {
 		call func(*Client) error
 	}{
 		{"ExchangeAuthCode", func(c *Client) error {
-			_, err := c.ExchangeAuthCode(context.Background(), "code", "uri", "verifier", nil)
+			_, err := c.ExchangeAuthCode(t.Context(), "code", "uri", "verifier", nil)
 			return err
 		}},
 		{"ExchangeDeviceCode", func(c *Client) error {
-			_, err := c.ExchangeDeviceCode(context.Background(), "dev-code", nil)
+			_, err := c.ExchangeDeviceCode(t.Context(), "dev-code", nil)
 			return err
 		}},
 		{"ClientCredentials", func(c *Client) error {
-			_, err := c.ClientCredentials(context.Background(), nil, nil)
+			_, err := c.ClientCredentials(t.Context(), nil, nil)
 			return err
 		}},
 		{"RefreshToken", func(c *Client) error {
-			_, err := c.RefreshToken(context.Background(), "refresh", nil)
+			_, err := c.RefreshToken(t.Context(), "refresh", nil)
 			return err
 		}},
 		{"Introspect", func(c *Client) error {
-			_, err := c.Introspect(context.Background(), "tok")
+			_, err := c.Introspect(t.Context(), "tok")
 			return err
 		}},
 		{"Revoke", func(c *Client) error {
-			return c.Revoke(context.Background(), "tok")
+			return c.Revoke(t.Context(), "tok")
 		}},
 		{"RequestDeviceCode", func(c *Client) error {
-			_, err := c.RequestDeviceCode(context.Background(), nil, nil)
+			_, err := c.RequestDeviceCode(t.Context(), nil, nil)
 			return err
 		}},
 	}
@@ -728,7 +727,7 @@ func TestPersonalAPIKeyTokenInfoRequest(t *testing.T) {
 		})
 	})
 
-	info, err := client.PersonalAPIKeyTokenInfoRequest(context.Background(), key)
+	info, err := client.PersonalAPIKeyTokenInfoRequest(t.Context(), key)
 	if err != nil {
 		t.Fatalf("PersonalAPIKeyTokenInfoRequest: %v", err)
 	}
@@ -766,7 +765,7 @@ func TestPersonalAPIKeyTokenInfoRequest_NoEndpoint(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	if _, err := client.PersonalAPIKeyTokenInfoRequest(context.Background(), "sgk_x"); err == nil {
+	if _, err := client.PersonalAPIKeyTokenInfoRequest(t.Context(), "sgk_x"); err == nil {
 		t.Fatal("expected an error when the tokeninfo endpoint is not configured")
 	}
 }
@@ -1057,19 +1056,19 @@ func TestResponseBodyClosedOnRetryExhaustion(t *testing.T) {
 		call func(*Client) error
 	}{
 		{"getJSON via TokenInfoRequest", func(c *Client) error {
-			_, err := c.TokenInfoRequest(context.Background(), "tok")
+			_, err := c.TokenInfoRequest(t.Context(), "tok")
 			return err
 		}},
 		{"getJSON via PersonalAPIKeyTokenInfoRequest", func(c *Client) error {
-			_, err := c.PersonalAPIKeyTokenInfoRequest(context.Background(), "sgk_x")
+			_, err := c.PersonalAPIKeyTokenInfoRequest(t.Context(), "sgk_x")
 			return err
 		}},
 		{"postForm via Introspect", func(c *Client) error {
-			_, err := c.Introspect(context.Background(), "tok")
+			_, err := c.Introspect(t.Context(), "tok")
 			return err
 		}},
 		{"Revoke", func(c *Client) error {
-			return c.Revoke(context.Background(), "tok")
+			return c.Revoke(t.Context(), "tok")
 		}},
 	}
 
@@ -1158,7 +1157,7 @@ func TestResponseBodyClosedOnEveryOutcome(t *testing.T) {
 				TokenInfoURL: server.URL + "/tokeninfo",
 			})
 
-			_, err := client.PersonalAPIKeyTokenInfoRequest(context.Background(), "sgk_x")
+			_, err := client.PersonalAPIKeyTokenInfoRequest(t.Context(), "sgk_x")
 			if tt.wantErr != (err != nil) {
 				t.Fatalf("err = %v, wantErr = %v", err, tt.wantErr)
 			}
@@ -1208,7 +1207,7 @@ func TestDefaultClientReplaysFormBodyOnRetry(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	res, err := client.Introspect(context.Background(), "tok")
+	res, err := client.Introspect(t.Context(), "tok")
 	if err != nil {
 		t.Fatalf("Introspect: %v", err)
 	}

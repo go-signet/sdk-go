@@ -1,6 +1,7 @@
 package credstore_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,7 +50,7 @@ func TestFileStore_LoadNotFound(t *testing.T) {
 	store := credstore.NewTokenFileStore(filepath.Join(tempDir, "tokens.json"))
 
 	_, err := store.Load("nonexistent")
-	if err != credstore.ErrNotFound {
+	if !errors.Is(err, credstore.ErrNotFound) {
 		t.Errorf("Load() error = %v, want ErrNotFound", err)
 	}
 }
@@ -69,7 +70,7 @@ func TestFileStore_LoadFromExistingFileNotFound(t *testing.T) {
 
 	// Load a different client
 	_, err := store.Load("client-2")
-	if err != credstore.ErrNotFound {
+	if !errors.Is(err, credstore.ErrNotFound) {
 		t.Errorf("Load() error = %v, want ErrNotFound", err)
 	}
 }
@@ -91,7 +92,7 @@ func TestFileStore_Delete(t *testing.T) {
 	}
 
 	_, err := store.Load("test-client")
-	if err != credstore.ErrNotFound {
+	if !errors.Is(err, credstore.ErrNotFound) {
 		t.Errorf("Load() after Delete() error = %v, want ErrNotFound", err)
 	}
 }
@@ -143,23 +144,20 @@ func TestFileStore_ConcurrentWrites(t *testing.T) {
 	const goroutines = 10
 	var wg sync.WaitGroup
 
-	wg.Add(goroutines)
 	for i := range goroutines {
-		go func(id int) {
-			defer wg.Done()
-
+		wg.Go(func() {
 			tok := credstore.Token{
-				AccessToken:  fmt.Sprintf("access-token-%d", id),
-				RefreshToken: fmt.Sprintf("refresh-token-%d", id),
+				AccessToken:  fmt.Sprintf("access-token-%d", i),
+				RefreshToken: fmt.Sprintf("refresh-token-%d", i),
 				TokenType:    "Bearer",
 				ExpiresAt:    time.Now().Add(1 * time.Hour),
-				ClientID:     fmt.Sprintf("client-%d", id),
+				ClientID:     fmt.Sprintf("client-%d", i),
 			}
 
 			if err := store.Save(tok.ClientID, tok); err != nil {
-				t.Errorf("Goroutine %d: Save() error = %v", id, err)
+				t.Errorf("Goroutine %d: Save() error = %v", i, err)
 			}
-		}(i)
+		})
 	}
 
 	wg.Wait()
@@ -195,7 +193,7 @@ func TestFileStore_SaveEmptyClientID(t *testing.T) {
 	store := credstore.NewTokenFileStore(filepath.Join(tempDir, "tokens.json"))
 
 	err := store.Save("", credstore.Token{AccessToken: "tok"})
-	if err != credstore.ErrEmptyClientID {
+	if !errors.Is(err, credstore.ErrEmptyClientID) {
 		t.Errorf("Save(empty clientID) error = %v, want ErrEmptyClientID", err)
 	}
 }

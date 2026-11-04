@@ -35,8 +35,8 @@ func TestNewRejectsBlankResourceBeforeDiscovery(t *testing.T) {
 	_, _, err := signet.New(t.Context(), "http://127.0.0.1:1", "client",
 		signet.WithResources(" "),
 	)
-	var oauthErr *oauth.Error
-	if !errors.As(err, &oauthErr) || oauthErr.Code != oauth.ErrCodeInvalidRequest {
+	oauthErr, matched := errors.AsType[*oauth.Error](err)
+	if !matched || oauthErr.Code != oauth.ErrCodeInvalidRequest {
 		t.Fatalf("error = %v, want invalid_request", err)
 	}
 }
