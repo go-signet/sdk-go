@@ -2,6 +2,7 @@ name: Lint and Testing
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -31,6 +32,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
+          cache-dependency-path: |
+            go.sum
+            go.tools.sum
 
       - name: Run golangci-lint
         run: make lint
@@ -40,33 +44,21 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         go: [1.26, 1.27]
-        include:
-          - os: ubuntu-latest
-            go-build: ~/.cache/go-build
-          - os: macos-latest
-            go-build: ~/Library/Caches/go-build
     name: ${{ matrix.os }} @ Go ${{ matrix.go }}
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
       - name: Set up Go ${{ matrix.go }}
         uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
           check-latest: true
+          cache-dependency-path: |
+            go.sum
+            go.tools.sum
 
-      - name: Checkout Code
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.ref }}
-
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ${{ matrix.go-build }}
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
       - name: Run Tests
         run: |
           make test
